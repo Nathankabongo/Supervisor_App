@@ -9,7 +9,7 @@ function App() {
   const [currentPage, setCurrentPage] = useState('dashboard');
   const navigate = useNavigate();
   const location = useLocation();
-  const { isAuthenticated, checkAuth, logout } = useAuthStore();
+  const { logout } = useAuthStore();
   const { theme } = useSettingsStore();
 
   // Appliquer le thème
@@ -18,16 +18,16 @@ function App() {
   }, [theme]);
 
   // Vérifier l'authentification au chargement
-  useEffect(() => {
-    checkAuth();
-  }, [checkAuth]);
+  // useEffect(() => {
+  //   checkAuth();
+  // }, [checkAuth]);
 
   // Rediriger vers login si non authentifié
-  useEffect(() => {
-    if (!isAuthenticated) {
-      navigate('/authentication/login');
-    }
-  }, [isAuthenticated, navigate]);
+  // useEffect(() => {
+  //   if (!isAuthenticated) {
+  //     navigate('/authentication/login');
+  //   }
+  // }, [isAuthenticated, navigate]);
 
   // Initialize real-time simulation with backend WebSocket connection
   useRealtimeSimulation();
@@ -52,9 +52,9 @@ function App() {
     navigate('/authentication/login');
   };
 
-  if (!isAuthenticated) {
-    return <></>;
-  }
+  // if (!isAuthenticated) {
+  //   return <></>;
+  // }
 
   return (
     <>
