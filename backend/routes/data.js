@@ -307,7 +307,7 @@ router.post('/miners', (req, res) => {
 
 router.put('/miners/:id', (req, res) => {
   const db = getDb();
-  const { zone, gallery, status, heart_rate, temperature, battery, x, y, phone, emergency_contact, blood_group, account_status } = req.body;
+  const { zone, gallery, status, heart_rate, temperature, battery, x, y, phone, emergency_contact, blood_group, account_status, name, role } = req.body;
   db.prepare(`
     UPDATE miners SET 
       zone=COALESCE(?,zone),
@@ -322,9 +322,11 @@ router.put('/miners/:id', (req, res) => {
       emergency_contact=COALESCE(?,emergency_contact),
       blood_group=COALESCE(?,blood_group),
       account_status=COALESCE(?,account_status),
+      name=COALESCE(?,name),
+      role=COALESCE(?,role),
       last_update=datetime('now') 
     WHERE id=?
-  `).run(zone||null, gallery||null, status||null, heart_rate||null, temperature||null, battery||null, x??null, y??null, phone??null, emergency_contact??null, blood_group??null, account_status??null, req.params.id);
+  `).run(zone||null, gallery||null, status||null, heart_rate||null, temperature||null, battery||null, x??null, y??null, phone??null, emergency_contact??null, blood_group??null, account_status??null, name||null, role||null, req.params.id);
   
   const miner = db.prepare('SELECT * FROM miners WHERE id=?').get(req.params.id);
   
@@ -342,12 +344,45 @@ router.put('/miners/:id', (req, res) => {
         phone: miner.phone,
         emergency_contact: miner.emergency_contact,
         blood_group: miner.blood_group,
-        account_status: miner.account_status
+        account_status: miner.account_status,
+        name: miner.name,
+        role: miner.role
       });
     }
   }
 
   res.json({ success: true, miner: mapMiner(miner) });
+});
+
+router.delete('/miners/:id', (req, res) => {
+  const db = getDb();
+  const minerId = req.params.id;
+  
+  // Vérifier si le mineur existe
+  const miner = db.prepare('SELECT * FROM miners WHERE id=?').get(minerId);
+  if (!miner) {
+    return res.status(404).json({ error: 'Mineur non trouvé' });
+  }
+  
+  // Vérifier si le mineur est en service
+  if (miner.is_underground === 1 || miner.is_in_service === 1) {
+    return res.status(400).json({ error: 'Impossible de supprimer un mineur en service' });
+  }
+  
+  // Détacher la montre si associée
+  if (miner.watch_id) {
+    db.prepare("UPDATE watches SET status = 'available' WHERE id = ?").run(miner.watch_id);
+  }
+  
+  // Supprimer le mineur
+  db.prepare('DELETE FROM miners WHERE id=?').run(minerId);
+  
+  // Supprimer de la mémoire
+  if (realTimeDataService) {
+    realTimeDataService.miners.delete(minerId);
+  }
+  
+  res.json({ success: true, message: 'Mineur supprimé avec succès' });
 });
 
 // === MONTRES (PHYSICAL DEVICES) ===
@@ -379,7 +414,7 @@ router.post('/devices/associate', (req, res) => {
 
   const normalizedWatchId = watchId.trim().toUpperCase();
 
-  const miner = db.prepare('SELECT * FROM miners WHERE id = ?').get(matricule);
+  const miner = db.prepare('SELECT * FROM miners WHERE matricule = ?').get(matricule);
   if (!miner) return res.status(404).json({ error: 'Mineur non trouvé' });
 
   // Unbind this watch from anyone else
@@ -391,7 +426,7 @@ router.post('/devices/associate', (req, res) => {
   }
 
   // Bind watch and miner
-  db.prepare('UPDATE miners SET watch_id = ? WHERE id = ?').run(normalizedWatchId, matricule);
+  db.prepare('UPDATE miners SET watch_id = ? WHERE matricule = ?').run(normalizedWatchId, matricule);
   db.prepare('UPDATE watches SET status = \'assigned\' WHERE id = ?').run(normalizedWatchId);
 
   // Sync memory store

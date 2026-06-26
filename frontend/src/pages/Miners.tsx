@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Search, Heart, MapPin, ChevronRight, Plus, Phone, User, Check, AlertCircle, Link2, Unlink } from 'lucide-react';
+import { Search, Heart, MapPin, ChevronRight, Plus, Phone, User, Check, AlertCircle, Link2, Unlink, Edit, Trash2 } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import apiService from '../services/api';
 import MinerDetail from '../components/MinerDetail';
@@ -13,6 +13,8 @@ export default function Miners() {
 
   // Form State
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editingMiner, setEditingMiner] = useState<any | null>(null);
   const [name, setName] = useState('');
   const [role, setRole] = useState('Creuseur');
   const [phone, setPhone] = useState('');
@@ -127,6 +129,68 @@ export default function Miners() {
       setFormError(err.message || 'Une erreur est survenue lors de la création');
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleOpenEdit = (miner: any) => {
+    setEditingMiner(miner);
+    setName(miner.name);
+    setRole(miner.role);
+    setPhone(miner.phone || '');
+    setEmergencyContact(miner.emergency_contact || '');
+    setBloodGroup(miner.blood_group || 'O+');
+    setZone(miner.zone || 'ZONE B');
+    setShowEditModal(true);
+  };
+
+  const handleUpdateMiner = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim() || !editingMiner) {
+      setFormError('Le nom complet est obligatoire');
+      return;
+    }
+    setFormError('');
+    setIsSubmitting(true);
+
+    try {
+      await apiService.updateMiner(editingMiner.id, {
+        name,
+        role,
+        phone,
+        emergency_contact: emergencyContact,
+        blood_group: bloodGroup,
+        zone
+      });
+      
+      // Reset form
+      setName('');
+      setRole('Creuseur');
+      setPhone('');
+      setEmergencyContact('');
+      setBloodGroup('O+');
+      setZone('ZONE B');
+      setShowEditModal(false);
+      setEditingMiner(null);
+      
+      // Reload
+      await refreshMiners();
+    } catch (err: any) {
+      setFormError(err.message || 'Une erreur est survenue lors de la modification');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleDeleteMiner = async (miner: any) => {
+    if (!window.confirm(`Voulez-vous vraiment supprimer le mineur ${miner.name} (${miner.matricule}) ?\n\nCette action est irréversible.`)) {
+      return;
+    }
+
+    try {
+      await apiService.deleteMiner(miner.id);
+      await refreshMiners();
+    } catch (err: any) {
+      alert("Erreur lors de la suppression : " + (err.message || err));
     }
   };
 
@@ -374,12 +438,29 @@ export default function Miners() {
                     )}
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <button
-                      onClick={() => setSelectedMiner(miner)}
-                      className="text-gray-400 hover:text-white transition-colors bg-slate-800 hover:bg-slate-700 p-1.5 rounded"
-                    >
-                      <ChevronRight size={16} />
-                    </button>
+                    <div className="flex items-center justify-end gap-1">
+                      <button
+                        onClick={() => handleOpenEdit(miner)}
+                        title="Modifier"
+                        className="text-gray-400 hover:text-blue-400 transition-colors bg-slate-800 hover:bg-slate-700 p-1.5 rounded"
+                      >
+                        <Edit size={14} />
+                      </button>
+                      <button
+                        onClick={() => handleDeleteMiner(miner)}
+                        title="Supprimer"
+                        className="text-gray-400 hover:text-red-400 transition-colors bg-slate-800 hover:bg-slate-700 p-1.5 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                        disabled={miner.isUnderground || miner.isInService}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                      <button
+                        onClick={() => setSelectedMiner(miner)}
+                        className="text-gray-400 hover:text-white transition-colors bg-slate-800 hover:bg-slate-700 p-1.5 rounded"
+                      >
+                        <ChevronRight size={16} />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))
@@ -408,12 +489,27 @@ export default function Miners() {
                   <p className="text-gray-400 text-xs font-mono">{miner.matricule} • {miner.role}</p>
                 </div>
               </div>
-              <button
-                onClick={() => setSelectedMiner(miner)}
-                className="text-gray-400 hover:text-white transition-colors"
-              >
-                <ChevronRight size={18} />
-              </button>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => handleOpenEdit(miner)}
+                  className="text-gray-400 hover:text-blue-400 transition-colors p-1"
+                >
+                  <Edit size={16} />
+                </button>
+                <button
+                  onClick={() => handleDeleteMiner(miner)}
+                  className="text-gray-400 hover:text-red-400 transition-colors p-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={miner.isUnderground || miner.isInService}
+                >
+                  <Trash2 size={16} />
+                </button>
+                <button
+                  onClick={() => setSelectedMiner(miner)}
+                  className="text-gray-400 hover:text-white transition-colors p-1"
+                >
+                  <ChevronRight size={18} />
+                </button>
+              </div>
             </div>
             
             <div className="grid grid-cols-2 gap-2 text-xs border-t border-gray-800 pt-2.5">
@@ -562,6 +658,129 @@ export default function Miners() {
                   className="flex-1 bg-green-500 hover:bg-green-600 text-white text-xs font-semibold py-2 rounded transition-colors flex items-center justify-center gap-1.5"
                 >
                   {isSubmitting ? 'Enregistrement...' : <><Check size={14} /> Enregistrer</>}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* EDIT MODAL */}
+      {showEditModal && editingMiner && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[#1e293b] border border-gray-700 rounded-xl max-w-md w-full p-6 shadow-2xl relative animate-in fade-in zoom-in-95 duration-200">
+            <h2 className="text-lg font-bold text-white mb-1 flex items-center gap-2">
+              <Edit className="text-blue-400" /> Modifier le mineur
+            </h2>
+            <p className="text-xs text-gray-400 mb-4">
+              Modifier les informations de <strong>{editingMiner.name}</strong> ({editingMiner.matricule}).
+            </p>
+
+            {formError && (
+              <div className="mb-4 p-3 rounded bg-red-500/10 border border-red-500/20 text-red-400 text-xs flex items-center gap-2">
+                <AlertCircle size={16} />
+                <span>{formError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleUpdateMiner} className="space-y-4">
+              <div>
+                <label className="text-xs text-gray-300 font-semibold block mb-1">Nom complet *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="ex: Israel Lum"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="w-full bg-slate-900 border border-gray-700 rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs text-gray-300 font-semibold block mb-1">Fonction *</label>
+                  <select
+                    value={role}
+                    onChange={(e) => setRole(e.target.value)}
+                    className="w-full bg-slate-900 border border-gray-700 rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
+                  >
+                    {roles.map((r) => (
+                      <option key={r} value={r}>{r}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs text-gray-300 font-semibold block mb-1">Groupe Sanguin</label>
+                  <select
+                    value={bloodGroup}
+                    onChange={(e) => setBloodGroup(e.target.value)}
+                    className="w-full bg-slate-900 border border-gray-700 rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
+                  >
+                    {bloodGroups.map((bg) => (
+                      <option key={bg} value={bg}>{bg}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs text-gray-300 font-semibold block mb-1">Téléphone portable</label>
+                <input
+                  type="tel"
+                  placeholder="ex: +243 812 345 678"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  className="w-full bg-slate-900 border border-gray-700 rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs text-gray-300 font-semibold block mb-1">Contact d'urgence</label>
+                <input
+                  type="text"
+                  placeholder="ex: +243 899 999 999 (Famille)"
+                  value={emergencyContact}
+                  onChange={(e) => setEmergencyContact(e.target.value)}
+                  className="w-full bg-slate-900 border border-gray-700 rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs text-gray-300 font-semibold block mb-1">Zone d'affectation habituelle</label>
+                <select
+                  value={zone}
+                  onChange={(e) => setZone(e.target.value)}
+                  className="w-full bg-slate-900 border border-gray-700 rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
+                >
+                  {zones.map((z) => (
+                    <option key={z} value={z}>{z}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex items-center gap-3 pt-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowEditModal(false);
+                    setEditingMiner(null);
+                    setName('');
+                    setRole('Creuseur');
+                    setPhone('');
+                    setEmergencyContact('');
+                    setBloodGroup('O+');
+                    setZone('ZONE B');
+                  }}
+                  className="flex-1 bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold py-2 rounded transition-colors"
+                >
+                  Annuler
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="flex-1 bg-blue-500 hover:bg-blue-600 text-white text-xs font-semibold py-2 rounded transition-colors flex items-center justify-center gap-1.5"
+                >
+                  {isSubmitting ? 'Modification...' : <><Check size={14} /> Modifier</>}
                 </button>
               </div>
             </form>

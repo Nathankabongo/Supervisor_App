@@ -187,11 +187,16 @@ export class RealTimeDataService {
     // Map watch_id to miner_id if data.minerId is a watch physical ID
     let watchId = data.minerId;
     if (!watchId && data.workerId) watchId = data.workerId;
-    
-    // Find the miner associated with this watch_id in our map
+
+    // Find the miner by matricule (workerId) or by watch_id
     let miner = null;
     if (watchId) {
-      miner = Array.from(this.miners.values()).find(m => m.watch_id === watchId);
+      // First try to find by matricule (workerId from firmware)
+      miner = Array.from(this.miners.values()).find(m => m.matricule === watchId);
+      // If not found, try by watch_id (for LoRa data)
+      if (!miner) {
+        miner = Array.from(this.miners.values()).find(m => m.watch_id === watchId);
+      }
     }
 
 

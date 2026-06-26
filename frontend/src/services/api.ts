@@ -282,11 +282,19 @@ class ApiService {
       emergency_contact?: string;
       blood_group?: string;
       account_status?: string;
+      name?: string;
+      role?: string;
     },
   ): Promise<any> {
     return this.request(`/data/miners/${id}`, {
       method: 'PUT',
       body: JSON.stringify(data),
+    });
+  }
+
+  async deleteMiner(id: string): Promise<any> {
+    return this.request(`/data/miners/${id}`, {
+      method: 'DELETE',
     });
   }
 

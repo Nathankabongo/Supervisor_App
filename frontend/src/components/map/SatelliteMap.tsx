@@ -149,14 +149,30 @@ export default function SatelliteMap({ miners, selectedMiner, onMinerClick }: Sa
       let lat = 0;
       let lng = 0;
 
-      const fallback = localToGps(miner.position.x, miner.position.y);
+      // Validate position data before conversion
+      const posX = miner.position?.x ?? 500;
+      const posY = miner.position?.y ?? 250;
+
+      // Skip if position is invalid
+      if (isNaN(posX) || isNaN(posY) || posX === null || posY === null) {
+        console.warn(`Invalid position for miner ${miner.name}: x=${posX}, y=${posY}`);
+        return;
+      }
+
+      const fallback = localToGps(posX, posY);
       lat = fallback.lat;
       lng = fallback.lng;
 
+      // Validate converted coordinates
+      if (isNaN(lat) || isNaN(lng) || lat === null || lng === null) {
+        console.warn(`Invalid GPS coordinates for miner ${miner.name}: lat=${lat}, lng=${lng}`);
+        return;
+      }
+
       // Status color for the marker border
-      const statusColor = 
-        miner.status === 'danger' ? '#ef4444' : 
-        miner.status === 'warning' ? '#f97316' : 
+      const statusColor =
+        miner.status === 'danger' ? '#ef4444' :
+        miner.status === 'warning' ? '#f97316' :
         '#22c55e';
 
       // Create a custom divIcon for a beautiful pulsating point
@@ -193,7 +209,7 @@ export default function SatelliteMap({ miners, selectedMiner, onMinerClick }: Sa
           <p style="margin: 2px 0;"><strong>Zone:</strong> ${miner.currentZone}</p>
           <p style="margin: 2px 0;"><strong>Rôle:</strong> ${miner.role}</p>
           <p style="margin: 2px 0; display: flex; align-items: center; gap: 4px;">
-            <strong>Santé:</strong> 
+            <strong>Santé:</strong>
             <span style="color: ${miner.status === 'danger' ? '#f87171' : '#4ade80'}">
               ❤️ ${miner.heartRate} bpm
             </span>
@@ -213,8 +229,15 @@ export default function SatelliteMap({ miners, selectedMiner, onMinerClick }: Sa
 
     // Pan to selected miner if present
     if (selectedMiner) {
-      const pos = localToGps(selectedMiner.position.x, selectedMiner.position.y);
-      mapRef.current.setView([pos.lat, pos.lng], 16, { animate: true });
+      const posX = selectedMiner.position?.x ?? 500;
+      const posY = selectedMiner.position?.y ?? 250;
+
+      if (!isNaN(posX) && !isNaN(posY) && posX !== null && posY !== null) {
+        const pos = localToGps(posX, posY);
+        if (!isNaN(pos.lat) && !isNaN(pos.lng) && pos.lat !== null && pos.lng !== null) {
+          mapRef.current.setView([pos.lat, pos.lng], 16, { animate: true });
+        }
+      }
     }
 
   }, [miners, selectedMiner, onMinerClick, gisConfig]);

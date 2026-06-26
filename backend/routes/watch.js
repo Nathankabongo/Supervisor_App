@@ -18,21 +18,22 @@ router.post('/data', (req, res) => {
     
     if (realTimeDataService) {
         const data = req.body;
-        const watchId = data.workerId ? data.workerId.trim().toUpperCase() : '';
+        const matricule = data.workerId ? data.workerId.trim().toUpperCase() : '';
         const db = getDb();
-        
-        // Auto register watch in database
-        db.prepare('INSERT OR IGNORE INTO watches (id, status) VALUES (?, \'available\')').run(watchId);
-        db.prepare('UPDATE watches SET last_seen = datetime(\'now\') WHERE id = ?').run(watchId);
 
-        // Find associated miner
-        const miner = db.prepare('SELECT * FROM miners WHERE watch_id = ?').get(watchId);
+        // Find associated miner by matricule (workerId)
+        const miner = db.prepare('SELECT * FROM miners WHERE matricule = ?').get(matricule);
         if (miner) {
+            // Update associated watch status and last_seen
+            if (miner.watch_id) {
+                db.prepare("UPDATE watches SET status = 'assigned', last_seen = datetime('now') WHERE id = ?").run(miner.watch_id);
+            }
+
             // Check shift_start event and shift status
             if (!miner.is_in_service) {
                 db.prepare("UPDATE miners SET is_in_service = 1, status = 'safe', last_update = datetime('now') WHERE id = ?")
                   .run(miner.id);
-                
+
                 // Create a shift start trace event
                 const trId = `TR-${String(Date.now())}`;
                 db.prepare("INSERT INTO trace_events (id, miner_id, miner_name, event_type, zone, details) VALUES (?, ?, ?, ?, ?, ?)")
@@ -51,7 +52,7 @@ router.post('/data', (req, res) => {
             const zone = mapData.zone;
             const x = mapData.x;
             const y = mapData.y;
-            
+
             // Check if zone changed, log it if so!
             const oldZone = miner.zone;
             if (oldZone && oldZone !== zone && miner.is_underground) {
@@ -74,7 +75,7 @@ router.post('/data', (req, res) => {
                 connectionType: 'wifi',
                 zone: zone
             });
-            
+
             realTimeDataService.processLoRaData({
                 type: 'status',
                 minerId: miner.id,
@@ -85,15 +86,15 @@ router.post('/data', (req, res) => {
                 connectionType: 'wifi'
             });
 
-            return res.json({ 
-                ok: true, 
-                workerName: miner.name, 
-                zone: zone 
+            return res.json({
+                ok: true,
+                workerName: miner.name,
+                zone: zone
             });
         } else {
-            return res.json({ 
-                ok: false, 
-                message: 'Montre non attribuée' 
+            return res.json({
+                ok: false,
+                message: 'Mineur non trouvé avec ce matricule'
             });
         }
     }
@@ -104,15 +105,15 @@ router.post('/data', (req, res) => {
 router.post('/sos', (req, res) => {
     console.log('🆘 SOS!', req.body);
     io.emit('watch-raw-data', { endpoint: '/api/watch/sos', payload: req.body });
-    
+
     if (realTimeDataService) {
         const data = req.body;
-        const watchId = data.workerId ? data.workerId.trim().toUpperCase() : '';
+        const matricule = data.workerId ? data.workerId.trim().toUpperCase() : '';
         const type = data.type === 'FALL' ? 'fall' : 'emergency';
         const msg = data.type === 'FALL' ? 'Chute détectée (WiFi)' : 'Bouton SOS activé (WiFi)';
-        
+
         const db = getDb();
-        const miner = db.prepare('SELECT * FROM miners WHERE watch_id = ?').get(watchId);
+        const miner = db.prepare('SELECT * FROM miners WHERE matricule = ?').get(matricule);
         
         if (miner) {
             const mapData = gpsToLocalMap(data.lat, data.lng);
