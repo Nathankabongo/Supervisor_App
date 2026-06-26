@@ -193,11 +193,7 @@ export class RealTimeDataService {
     if (watchId) {
       miner = Array.from(this.miners.values()).find(m => m.watch_id === watchId);
     }
-    
-    // Fallback: search by matricule
-    if (!miner && watchId) {
-      miner = this.miners.get(watchId);
-    }
+
 
     if (!miner) {
       console.warn(`⚠️ Télémétrie reçue pour une montre non assignée: ${watchId}`);

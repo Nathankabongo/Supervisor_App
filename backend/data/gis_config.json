@@ -1,38 +1,38 @@
 {
   "site": {
-    "name": "Mine de K",
-    "centerLat": -4.3299521,
-    "centerLng": 27.4794,
-    "minLat": -4.3299521,
-    "maxLat": 27.4794,
-    "minLng": 27.47,
-    "maxLng": 27.49
+    "name": "Mine de Démonstration - Kinshasa",
+    "centerLat": -4.4195401,
+    "centerLng": 15.3097856,
+    "minLat": -4.421,
+    "maxLat": -4.418,
+    "minLng": 15.308,
+    "maxLng": 15.3115
   },
   "zones": [
     {
-      "name": "ZONE A",
+      "name": "Entrée principale",
       "color": "#f97316",
       "points": [
         {
-          "lat": -4.32,
-          "lng": 15.47
+          "lat": -4.41854,
+          "lng": 15.308786
         },
         {
-          "lat": -4.643,
-          "lng": 15.47
+          "lat": -4.41854,
+          "lng": 15.310786
         },
         {
-          "lat": -4.643,
-          "lng": 15.477
+          "lat": -4.42054,
+          "lng": 15.310786
         },
         {
-          "lat": -4.648,
-          "lng": 15.477
+          "lat": -4.42054,
+          "lng": 15.308786
         }
       ]
     },
     {
-      "name": "ZONE B",
+      "name": "Zone d'extraction",
       "color": "#3b82f6",
       "points": [
         {
@@ -54,24 +54,24 @@
       ]
     },
     {
-      "name": "ZONE C",
-      "color": "#22c55e",
+      "name": "Zone de traitement",
+      "color": "#08e258",
       "points": [
         {
-          "lat": -4.648,
-          "lng": 27.483
+          "lat": -4.4194,
+          "lng": 15.31
         },
         {
-          "lat": -4.643,
-          "lng": 27.483
+          "lat": -4.4194,
+          "lng": 15.3113
         },
         {
-          "lat": -4.643,
-          "lng": 27.49
+          "lat": -4.4205,
+          "lng": 15.3113
         },
         {
-          "lat": -4.648,
-          "lng": 27.49
+          "lat": -4.4205,
+          "lng": 15.31
         }
       ]
     }

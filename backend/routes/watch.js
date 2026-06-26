@@ -26,7 +26,7 @@ router.post('/data', (req, res) => {
         db.prepare('UPDATE watches SET last_seen = datetime(\'now\') WHERE id = ?').run(watchId);
 
         // Find associated miner
-        const miner = db.prepare('SELECT * FROM miners WHERE watch_id = ? OR id = ?').get(watchId, watchId);
+        const miner = db.prepare('SELECT * FROM miners WHERE watch_id = ?').get(watchId);
         if (miner) {
             // Check shift_start event and shift status
             if (!miner.is_in_service) {
@@ -112,7 +112,7 @@ router.post('/sos', (req, res) => {
         const msg = data.type === 'FALL' ? 'Chute détectée (WiFi)' : 'Bouton SOS activé (WiFi)';
         
         const db = getDb();
-        const miner = db.prepare('SELECT * FROM miners WHERE watch_id = ? OR id = ?').get(watchId, watchId);
+        const miner = db.prepare('SELECT * FROM miners WHERE watch_id = ?').get(watchId);
         
         if (miner) {
             const mapData = gpsToLocalMap(data.lat, data.lng);

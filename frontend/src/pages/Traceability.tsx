@@ -240,9 +240,9 @@ export default function Traceability() {
         apiService.getTraceStats(),
       ]);
       if (eventsRes.events) {
-        const mapped = (eventsRes.events as { timestamp: string | number; [key: string]: unknown }[]).map((e) => ({
+        const mapped = (eventsRes.events as { timestamp: string | number; createdAt?: string; [key: string]: unknown }[]).map((e) => ({
           ...e,
-          timestamp: new Date(e.timestamp).getTime(),
+          timestamp: new Date(e.createdAt || e.timestamp || Date.now()).getTime(),
         })) as unknown as TraceEvent[];
         setEvents(mapped);
       }
@@ -355,9 +355,9 @@ export default function Traceability() {
           apiService.getTraceStats(),
         ]);
         if (eventsRes.events?.length > 0) {
-          const mapped = (eventsRes.events as { timestamp: string | number; [key: string]: unknown }[]).map((e) => ({
+          const mapped = (eventsRes.events as { timestamp: string | number; createdAt?: string; [key: string]: unknown }[]).map((e) => ({
             ...e,
-            timestamp: new Date(e.timestamp).getTime(),
+            timestamp: new Date(e.createdAt || e.timestamp || Date.now()).getTime(),
           })) as unknown as TraceEvent[];
           setEvents(mapped);
         }
@@ -382,9 +382,9 @@ export default function Traceability() {
         limit: 100,
       });
       if (res.events?.length > 0) {
-        const mapped = (res.events as { timestamp: string | number; [key: string]: unknown }[]).map((e) => ({
+        const mapped = (res.events as { timestamp: string | number; createdAt?: string; [key: string]: unknown }[]).map((e) => ({
           ...e,
-          timestamp: new Date(e.timestamp).getTime(),
+          timestamp: new Date(e.createdAt || e.timestamp || Date.now()).getTime(),
         })) as unknown as TraceEvent[];
         setEvents(mapped);
       }
@@ -420,10 +420,14 @@ export default function Traceability() {
     stats?.totalZoneChanges ?? events.filter((e) => e.eventType === 'zone_change').length;
   const uniqueMiners = stats?.uniqueMiners ?? new Set(events.map((e) => e.minerId)).size;
 
-  const formatTime = (ts: number) =>
-    new Date(ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
-  const formatDate = (ts: number) =>
-    new Date(ts).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' });
+  const formatTime = (ts: number) => {
+    const d = new Date(ts);
+    return isNaN(d.getTime()) ? '--:--' : d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+  };
+  const formatDate = (ts: number) => {
+    const d = new Date(ts);
+    return isNaN(d.getTime()) ? '--' : d.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' });
+  };
 
   return (
     <div className="p-4 space-y-4 bg-[#0f172a] min-h-screen">

@@ -2,9 +2,10 @@ import { useState, useEffect } from 'react';
 import { Search, Heart, MapPin, ChevronRight, Plus, Phone, User, Check, AlertCircle, Link2, Unlink } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import apiService from '../services/api';
+import MinerDetail from '../components/MinerDetail';
 
 export default function Miners() {
-  const { miners, setMiners, setSelectedMiner } = useStore();
+  const { miners, setMiners, selectedMiner, setSelectedMiner } = useStore();
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [zoneFilter, setZoneFilter] = useState<string>('all');
@@ -628,6 +629,10 @@ export default function Miners() {
             </form>
           </div>
         </div>
+      )}
+
+      {selectedMiner && (
+        <MinerDetail miner={selectedMiner} onClose={() => setSelectedMiner(null)} />
       )}
     </div>
   );
