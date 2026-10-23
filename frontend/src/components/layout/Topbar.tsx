@@ -1,8 +1,13 @@
-import { Bell, Sun, MapPin } from 'lucide-react';
+import { Bell, Sun, Moon, MapPin } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { useStore } from '../../store/useStore';
+import { useSettingsStore } from '../../store/useSettingsStore';
 
 export default function Topbar() {
+  const navigate = useNavigate();
   const { alerts } = useStore();
+  const theme = useSettingsStore((s) => s.theme);
+  const setTheme = useSettingsStore((s) => s.setTheme);
   const activeAlerts = alerts.filter((a) => !a.resolved).length;
 
   return (
@@ -16,7 +21,12 @@ export default function Topbar() {
       {/* Right Side */}
       <div className="flex items-center gap-3">
         {/* Alert Bell */}
-        <button className="relative p-1.5 text-gray-400 hover:text-white transition-colors">
+        <button
+          type="button"
+          title="Voir les alertes"
+          onClick={() => navigate('/alerts')}
+          className="relative p-1.5 text-gray-400 hover:text-white transition-colors"
+        >
           <Bell size={20} />
           {activeAlerts > 0 && (
             <span className="absolute top-0 right-0 w-4 h-4 bg-red-500 text-white text-[10px] rounded-full flex items-center justify-center">
@@ -26,8 +36,13 @@ export default function Topbar() {
         </button>
 
         {/* Theme Toggle */}
-        <button className="p-1.5 text-gray-400 hover:text-white transition-colors">
-          <Sun size={20} />
+        <button
+          type="button"
+          title={theme === 'dark' ? 'Passer en mode clair' : 'Passer en mode sombre'}
+          onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+          className="p-1.5 text-gray-400 hover:text-white transition-colors"
+        >
+          {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
         </button>
 
         {/* Site Selector */}

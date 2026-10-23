@@ -1,9 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { Terminal, Activity, MapPin, AlertTriangle, Trash2, Cpu } from 'lucide-react';
-
-const host = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
-const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || `http://${host}:5000`;
+import { SOCKET_URL } from '../config/urls';
 
 interface LogEntry {
   id: string;

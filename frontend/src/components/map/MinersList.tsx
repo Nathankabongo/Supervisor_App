@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Miner } from '../../store/useStore';
 import { Heart, Search, Bell, Wifi, Radio } from 'lucide-react';
 
@@ -8,6 +9,7 @@ interface MinersListProps {
 }
 
 export default function MinersList({ miners, onMinerClick }: MinersListProps) {
+  const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
 
   const filteredMiners = miners.filter(
@@ -113,7 +115,11 @@ export default function MinersList({ miners, onMinerClick }: MinersListProps) {
         ))}
       </div>
 
-      <button className="w-full mt-2 text-blue-400 text-[10px] hover:text-blue-300 transition-colors shrink-0">
+      <button
+        type="button"
+        onClick={() => navigate('/miners')}
+        className="w-full mt-2 text-blue-400 text-[10px] hover:text-blue-300 transition-colors shrink-0"
+      >
         Voir tous →
       </button>
     </div>

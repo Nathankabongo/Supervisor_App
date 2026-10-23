@@ -1,41 +1,45 @@
 import { getDb } from './database.js';
 import { gpsToLocalMap } from '../utils/gps.js';
+import { enqueueActivateSirenForZone } from './deviceCommandService.js';
 
 const MAX_ALERTS = 500;
 const MAX_NOTIFICATIONS = 200;
 const ALERT_TTL = 24 * 60 * 60 * 1000; // 24h
 const CLEANUP_INTERVAL = 60 * 60 * 1000; // 1h
 
-function predictIncidentCause(heartRate, seismicHz, env) {
-  // 1. Éboulement / Secousse sismique
-  if (seismicHz && seismicHz > 50) {
-    return `Éboulement / Secousse sismique détectée (Vibrations montre: ${seismicHz}Hz)`;
+/**
+ * Cause affichée = type/message montre, enrichie seulement si la payload
+ * contient des capteurs réels (pas de valeurs inventées / seed env).
+ */
+function resolvePredictedCause(data) {
+  const alertType = data.alertType;
+  const message = data.message;
+
+  // Capteurs uniquement s'ils viennent de la montre (présents dans la payload)
+  const hasHr = data.heartRate != null && data.heartRate !== '';
+  const hasSeismic = data.seismicHz != null && data.seismicHz !== '';
+  const hr = hasHr ? Number(data.heartRate) : null;
+  const seismic = hasSeismic ? Number(data.seismicHz) : null;
+
+  if (hasSeismic && seismic > 50) {
+    return `Éboulement / Secousse sismique détectée (Vibrations montre: ${seismic}Hz)`;
   }
-  
-  if (env) {
-    // 2. Poche de gaz / Asphyxie (CO2 élevé)
-    if (env.co2_level && env.co2_level > 500) {
-      return `Asphyxie / Présence de gaz CO₂ élevé dans la zone (${env.co2_level}ppm)`;
-    }
-    
-    // 3. Poussière / Incendie (Poussière élevée)
-    if (env.dust_level && env.dust_level > 1.5) {
-      return `Difficulté respiratoire / Concentration de poussière élevée (${env.dust_level}mg/m³)`;
-    }
-    
-    // 4. Coup de chaleur (Température de la zone élevée)
-    if (env.temperature && env.temperature > 33) {
-      return `Coup de chaleur / Température de zone excessive (${env.temperature.toFixed(1)}°C)`;
-    }
+  if (hasHr && hr > 120) {
+    return `Malaise cardiaque / Tachycardie (Rythme cardiaque: ${hr}bpm)`;
   }
 
-  // 5. Malaise cardiaque (Rythme élevé)
-  if (heartRate && heartRate > 120) {
-    return `Malaise cardiaque / Tachycardie (Rythme cardiaque élevé: ${heartRate}bpm)`;
+  switch (alertType) {
+    case 'fall':
+      return message || 'Chute détectée par la montre';
+    case 'emergency':
+      return message || 'Bouton SOS activé';
+    case 'immobility':
+      return message || 'Immobilité prolongée détectée';
+    case 'gas':
+      return message || 'Gaz détecté par la montre';
+    default:
+      return message || null;
   }
-  
-  // 6. Cause par défaut
-  return "Chute accidentelle / Perte d'équilibre ou Glissade";
 }
 
 export class RealTimeDataService {
@@ -44,7 +48,6 @@ export class RealTimeDataService {
     this.miners = new Map();
     this.alerts = [];
     this.notifications = [];
-    this.lastPreventiveAlert = new Map();
     this.cleanupTimer = null;
     this.startCleanup();
     this.loadMinersFromDb();
@@ -75,22 +78,25 @@ export class RealTimeDataService {
           phone: m.phone,
           emergency_contact: m.emergency_contact,
           blood_group: m.blood_group,
-          zone: m.zone || 'ZONE B',
-          gallery: m.gallery || 'Galerie 1',
+          zone: m.zone || '',
+          gallery: m.gallery || '',
           photo: m.photo,
           account_status: m.account_status,
           watch_id: m.watch_id,
           status: m.status || 'safe',
-          heartRate: m.heart_rate || 70,
-          temperature: m.temperature || 36.5,
-          battery: m.battery || 100,
-          position: { x: m.x || 500, y: m.y || 250, timestamp: Date.now() },
-          trajectory: trajectory.length > 0 ? trajectory : (m.x && m.y ? [{ x: m.x, y: m.y, timestamp: Date.now() }] : []),
+          heartRate: m.heart_rate || 0,
+          temperature: m.temperature,
+          battery: m.battery,
+          position: (m.x != null && m.y != null)
+            ? { x: m.x, y: m.y, timestamp: Date.now() }
+            : { x: 0, y: 0, timestamp: 0 },
+          // Trajectoire = logs GPS montre uniquement (pas de point inventé)
+          trajectory: trajectory,
           is_in_service: m.is_in_service === 1,
           is_underground: m.is_underground === 1,
           entry_time: m.entry_time,
           exit_time: m.exit_time,
-          activityLevel: 5
+          activityLevel: 0
         });
       });
       console.log(`✅ Loaded ${this.miners.size} miners from DB into RealTimeDataService`);
@@ -163,6 +169,16 @@ export class RealTimeDataService {
     return this.alerts;
   }
 
+  clearAlerts() {
+    this.alerts = [];
+    this.websocketManager.broadcast('alerts-cleared', {});
+  }
+
+  deleteAlert(alertId) {
+    this.alerts = this.alerts.filter(a => a.id !== alertId);
+    this.websocketManager.broadcast('alert-deleted', { alertId });
+  }
+
   getUnresolvedAlerts() {
     return this.alerts.filter(a => !a.resolved);
   }
@@ -188,11 +204,14 @@ export class RealTimeDataService {
     let watchId = data.minerId;
     if (!watchId && data.workerId) watchId = data.workerId;
 
-    // Find the miner by matricule (workerId) or by watch_id
+    // Find the miner by id, matricule (workerId) or by watch_id
     let miner = null;
     if (watchId) {
+      miner = this.miners.get(watchId) || null;
       // First try to find by matricule (workerId from firmware)
-      miner = Array.from(this.miners.values()).find(m => m.matricule === watchId);
+      if (!miner) {
+        miner = Array.from(this.miners.values()).find(m => m.matricule === watchId);
+      }
       // If not found, try by watch_id (for LoRa data)
       if (!miner) {
         miner = Array.from(this.miners.values()).find(m => m.watch_id === watchId);
@@ -220,13 +239,9 @@ export class RealTimeDataService {
         this.updateMinerLocation(data);
         break;
       case 'alert':
-        this.createAlertFromWatch(data);
-        break;
+        return this.createAlertFromWatch(data);
       case 'status':
         this.updateMinerStatus(data);
-        if (data.status !== 'danger') {
-          this.checkPreventiveAnomalies(data.minerId, data.heartRate, data.seismicHz);
-        }
         break;
       case 'health':
         this.processHealthData(data);
@@ -309,42 +324,239 @@ export class RealTimeDataService {
 
   createAlertFromWatch(data) {
     const miner = this.miners.get(data.minerId) || {};
-    const zone = data.zone || miner.zone || 'ZONE A';
-    
-    let env = null;
+    const zone = data.zone || miner.zone || '';
+    const predictedCause = resolvePredictedCause(data);
+
+    const timestamp = Date.now();
+    const createdAt = new Date(timestamp).toISOString();
+    const alert = {
+      id: `alert-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      alertId: null,
+      minerId: data.minerId,
+      minerName: data.minerName || miner.name || data.minerId,
+      type: data.alertType,
+      severity: data.severity || 'high',
+      message: data.message,
+      zone: zone,
+      timestamp,
+      createdAt,
+      resolved: false,
+      predictedCause: predictedCause,
+      source: 'LILYGO_INCIDENT',
+      deviceId: null,
+      sensorType: null,
+      sensorRaw: null,
+      threshold: null,
+      siren: true,
+      status: 'ACTIVE',
+      clientEventId: null,
+    };
+    alert.alertId = alert.id;
+
     try {
       const db = getDb();
-      env = db.prepare('SELECT * FROM env_conditions WHERE zone=?').get(zone);
+      db.prepare(
+        `INSERT INTO alerts (
+           id, minerId, minerName, type, severity, message, zone, timestamp, resolved, predictedCause,
+           source, device_id, sensor_type, sensor_raw, threshold, siren, client_event_id, status
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).run(
+        alert.id,
+        alert.minerId,
+        alert.minerName,
+        alert.type,
+        alert.severity,
+        alert.message,
+        alert.zone,
+        alert.timestamp,
+        alert.predictedCause,
+        alert.source,
+        alert.deviceId,
+        alert.sensorType,
+        alert.sensorRaw,
+        alert.threshold,
+        1,
+        alert.clientEventId,
+        alert.status
+      );
     } catch (e) {
-      console.warn("Could not query env_conditions for prediction:", e);
+      console.warn('Could not persist alert to DB:', e);
     }
 
-    const hr = data.heartRate || miner.heartRate || 72;
-    const seismic = data.seismicHz || miner.seismicHz || 0;
-    
-    const predictedCause = predictIncidentCause(hr, seismic, env);
+    this.alerts.push(alert);
+    console.log(`[T0] alert created id=${alert.id} zone=${zone} source=LILYGO_INCIDENT createdAt=${createdAt}`);
+    enqueueActivateSirenForZone(zone, alert);
+    this.emitAlert(alert);
+    return alert;
+  }
+
+  emitAlert(alert) {
+    this.websocketManager.broadcastAlert(alert);
+    console.log(`[new-alert] emitted id=${alert.id} createdAt=${alert.createdAt || new Date(alert.timestamp).toISOString()}`);
+  }
+
+  /** Incident PC crise — même table alerts + Socket.IO, pas une 2e architecture. */
+  createSystemAlert({ zone, message, type = 'emergency' }) {
+    const timestamp = Date.now();
+    const createdAt = new Date(timestamp).toISOString();
+    const alert = {
+      id: `alert-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      minerId: null,
+      minerName: null,
+      type,
+      severity: 'high',
+      message: message || "Plan d'évacuation activé",
+      zone: zone || 'ZONE B',
+      timestamp,
+      createdAt,
+      resolved: false,
+      predictedCause: message || null,
+      source: 'SYSTEM',
+      deviceId: null,
+      sensorType: null,
+      sensorRaw: null,
+      threshold: null,
+      siren: true,
+      status: 'ACTIVE',
+      clientEventId: null,
+    };
+    alert.alertId = alert.id;
+
+    try {
+      const db = getDb();
+      db.prepare(
+        `INSERT INTO alerts (
+           id, minerId, minerName, type, severity, message, zone, timestamp, resolved, predictedCause,
+           source, device_id, sensor_type, sensor_raw, threshold, siren, client_event_id, status
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).run(
+        alert.id,
+        alert.minerId,
+        alert.minerName,
+        alert.type,
+        alert.severity,
+        alert.message,
+        alert.zone,
+        alert.timestamp,
+        alert.predictedCause,
+        alert.source,
+        alert.deviceId,
+        alert.sensorType,
+        alert.sensorRaw,
+        alert.threshold,
+        1,
+        alert.clientEventId,
+        alert.status
+      );
+    } catch (e) {
+      console.warn('Could not persist system alert:', e);
+    }
+
+    this.alerts.push(alert);
+    console.log(`[T0] alert created id=${alert.id} zone=${alert.zone} source=SYSTEM createdAt=${createdAt}`);
+    return alert;
+  }
+
+  /**
+   * Incident ESP32 / capteur de zone. minerId nullable.
+   * Idempotence: clientEventId unique.
+   */
+  createAlertFromDevice(payload) {
+    const db = getDb();
+    const clientEventId = payload.clientEventId;
+    if (!clientEventId) {
+      return { error: 'clientEventId requis', status: 400 };
+    }
+    const existing = db.prepare('SELECT * FROM alerts WHERE client_event_id = ?').get(clientEventId);
+    if (existing) {
+      return { created: false, alert: this.mapDbAlert(existing) };
+    }
 
     const alert = {
       id: `alert-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      minerId: data.minerId,
-      minerName: data.minerName || data.minerId,
-      type: data.alertType,
-      severity: data.severity,
-      message: data.message,
-      zone: zone,
+      minerId: null,
+      minerName: null,
+      type: payload.type || 'gas',
+      severity: payload.severity || 'high',
+      message: payload.message || 'Seuil prototype capteur dépassé',
+      zone: payload.zone,
       timestamp: Date.now(),
       resolved: false,
-      predictedCause: predictedCause
+      predictedCause: payload.message || null,
+      source: payload.source || 'GAS_SENSOR',
+      deviceId: payload.deviceId || null,
+      sensorType: payload.sensorType || 'MQ2',
+      sensorRaw: payload.sensorRaw ?? null,
+      threshold: payload.threshold ?? null,
+      siren: payload.siren !== false,
+      status: 'ACTIVE',
+      clientEventId: clientEventId || null,
     };
 
-    /*
-    if (data.alertType === 'emergency') {
-      alert.message = `Urgence signalée - Cause prédite: ${predictedCause}`;
+    try {
+      db.prepare(
+        `INSERT INTO alerts (
+           id, minerId, minerName, type, severity, message, zone, timestamp, resolved, predictedCause,
+           source, device_id, sensor_type, sensor_raw, threshold, siren, client_event_id, status
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).run(
+        alert.id,
+        alert.minerId,
+        alert.minerName,
+        alert.type,
+        alert.severity,
+        alert.message,
+        alert.zone,
+        alert.timestamp,
+        alert.predictedCause,
+        alert.source,
+        alert.deviceId,
+        alert.sensorType,
+        alert.sensorRaw,
+        alert.threshold,
+        alert.siren ? 1 : 0,
+        alert.clientEventId,
+        alert.status
+      );
+    } catch (e) {
+      if (String(e.message || '').includes('UNIQUE')) {
+        const existing = db.prepare('SELECT * FROM alerts WHERE client_event_id = ?').get(clientEventId);
+        return { created: false, alert: this.mapDbAlert(existing) };
+      }
+      throw e;
     }
-    */
 
     this.alerts.push(alert);
     this.websocketManager.broadcastAlert(alert);
+    if (alert.siren) {
+      enqueueActivateSirenForZone(alert.zone, alert);
+    }
+    return { created: true, alert };
+  }
+
+  mapDbAlert(a) {
+    if (!a) return null;
+    return {
+      id: a.id,
+      minerId: a.minerId ?? null,
+      minerName: a.minerName ?? null,
+      type: a.type,
+      severity: a.severity,
+      message: a.message,
+      zone: a.zone,
+      timestamp: a.timestamp,
+      createdAt: a.timestamp ? new Date(Number(a.timestamp)).toISOString() : null,
+      resolved: a.resolved === 1 || a.resolved === true,
+      predictedCause: a.predictedCause,
+      source: a.source || 'LILYGO_INCIDENT',
+      deviceId: a.device_id || a.deviceId || null,
+      sensorType: a.sensor_type || a.sensorType || null,
+      sensorRaw: a.sensor_raw ?? a.sensorRaw ?? null,
+      threshold: a.threshold ?? null,
+      siren: a.siren === 1 || a.siren === true,
+      status: a.status || (a.resolved === 1 ? 'RESOLVED' : 'ACTIVE'),
+      clientEventId: a.client_event_id || a.clientEventId || null,
+    };
   }
 
   updateMinerStatus(data) {
@@ -385,89 +597,6 @@ export class RealTimeDataService {
       minerId: data.minerId,
       healthData: data.healthData
     });
-  }
-
-  checkPreventiveAnomalies(minerId, heartRate, seismicHz) {
-    // Le superviseur a demandé à ce que SEULES les alertes provenant de l'application galaxy (SOS) soient générées.
-    // Désactivation complète des alertes préventives générées automatiquement par le backend.
-    return;
-    
-    const now = Date.now();
-    const lastAlertTime = this.lastPreventiveAlert.get(minerId) || 0;
-    
-    // Throttling : maximum 1 alerte préventive toutes les 60 secondes par mineur
-    if (now - lastAlertTime < 60000) {
-      return;
-    }
-
-    const miner = this.miners.get(minerId);
-    if (!miner) return;
-
-    const zone = miner.zone || 'ZONE A';
-    
-    let env = null;
-    try {
-      const db = getDb();
-      env = db.prepare('SELECT * FROM env_conditions WHERE zone=?').get(zone);
-    } catch (e) {
-      console.warn("Could not query env_conditions for anomaly detection:", e);
-    }
-
-    const hr = heartRate || miner.heartRate || 72;
-    const seismic = seismicHz || miner.seismicHz || 0;
-
-    let warningMessage = null;
-    let predictedCause = null;
-
-    // 1. Risque d'Asphyxie imminent : CO2 élevé (> 450ppm) ET rythme cardiaque élevé (> 100bpm)
-    if (env && env.co2_level && env.co2_level > 450 && hr > 100) {
-      warningMessage = `Rythme cardiaque élevé (${hr} bpm) détecté dans un environnement à fort taux de CO₂ (${env.co2_level} ppm).`;
-      predictedCause = `Risque d'Asphyxie imminent / Présence de gaz toxiques`;
-    }
-    // 2. Risque de Coup de chaleur imminent : Température élevée (> 32°C) ET rythme cardiaque élevé (> 105bpm)
-    else if (env && env.temperature && env.temperature > 32 && hr > 105) {
-      warningMessage = `Rythme cardiaque élevé (${hr} bpm) détecté sous une température de zone excessive (${env.temperature.toFixed(1)}°C).`;
-      predictedCause = `Risque de Coup de chaleur imminent / Déshydratation`;
-    }
-    // 3. Risque d'Éboulement imminent : secousses précurseurs détectées (vibrations montre entre 35Hz et 50Hz)
-    else if (seismic >= 35 && seismic <= 50) {
-      warningMessage = `Vibrations sismiques anormales (${seismic} Hz) enregistrées par le capteur de la montre.`;
-      predictedCause = `Risque d'Éboulement imminent (Secousses précurseurs détectées)`;
-    }
-    // 4. Anomalie Cardiaque isolée : pouls extrême hors effort (> 115bpm ou < 45bpm)
-    else if (hr > 115 || (hr > 0 && hr < 45)) {
-      warningMessage = `Rythme cardiaque anormal détecté (${hr} bpm) en dehors d'une activité SOS.`;
-      predictedCause = `Anomalie Cardiaque détectée (Malaise ou Tachycardie)`;
-    }
-
-    if (warningMessage && predictedCause) {
-      this.lastPreventiveAlert.set(minerId, now);
-
-      const alert = {
-        id: `alert-prev-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        minerId: minerId,
-        minerName: miner.name || minerId,
-        type: 'preventive_warning',
-        severity: 'medium', // Toast orange
-        message: `[Alerte Préventive] ${warningMessage}`,
-        zone: zone,
-        timestamp: now,
-        resolved: false,
-        predictedCause: predictedCause
-      };
-
-      this.alerts.push(alert);
-      this.websocketManager.broadcastAlert(alert);
-
-      // Met à jour le statut du mineur en warning si pas déjà en danger
-      if (miner.status !== 'danger') {
-        this.updateMinerStatus({
-          minerId: minerId,
-          status: 'warning',
-          heartRate: hr
-        });
-      }
-    }
   }
 
   stop() {

@@ -1,5 +1,4 @@
-const host = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
-const API_URL = import.meta.env.VITE_API_URL || `http://${host}:5000/api`;
+import { API_URL } from '../config/urls';
 
 interface LoginResponse {
   token: string;
@@ -53,10 +52,24 @@ class ApiService {
       headers['Authorization'] = `Bearer ${this.token}`;
     }
 
-    const response = await fetch(`${API_URL}${endpoint}`, {
-      ...options,
-      headers,
-    });
+    let response: Response;
+    try {
+      response = await fetch(`${API_URL}${endpoint}`, {
+        ...options,
+        headers,
+      });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (
+        err instanceof TypeError ||
+        /Failed to fetch|NetworkError|Load failed|Network request failed/i.test(message)
+      ) {
+        throw new Error(
+          'Backend inaccessible. Vérifiez que le serveur tourne (npm run dev à la racine) et que /api répond.',
+        );
+      }
+      throw err instanceof Error ? err : new Error(message);
+    }
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({ error: 'Erreur réseau' }));
@@ -82,6 +95,13 @@ class ApiService {
     });
     this.setToken(data.token);
     return data;
+  }
+
+  async forgotPassword(username: string, newPassword?: string): Promise<{ success: boolean; message: string }> {
+    return this.request<{ success: boolean; message: string }>('/auth/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ username, newPassword }),
+    });
   }
 
   async logout(): Promise<void> {
@@ -160,12 +180,35 @@ class ApiService {
     return this.request(`/data/messages/${messageId}`);
   }
 
-  async getAlerts(): Promise<any> {
-    return this.request('/data/alerts');
+  async getAlerts(connectedOnly = false): Promise<any> {
+    return this.request(`/data/alerts${connectedOnly ? '?connectedOnly=true' : ''}`);
+  }
+
+  async clearAlerts(): Promise<any> {
+    return this.request('/data/alerts', { method: 'DELETE' });
+  }
+
+  async deleteAlert(alertId: string): Promise<any> {
+    return this.request(`/data/alerts/${alertId}`, { method: 'DELETE' });
   }
 
   async resolveAlert(alertId: string): Promise<any> {
     return this.request(`/data/alerts/${alertId}/resolve`, { method: 'POST' });
+  }
+
+  async getDeviceStatus(deviceId: string): Promise<any> {
+    return this.request(`/devices/${deviceId}/status`);
+  }
+
+  async postDeviceCommand(
+    deviceId: string,
+    action: 'ACTIVATE_SIREN' | 'DEACTIVATE_SIREN',
+    clientCommandId: string,
+  ): Promise<any> {
+    return this.request(`/devices/${deviceId}/commands`, {
+      method: 'POST',
+      body: JSON.stringify({ action, clientCommandId }),
+    });
   }
 
   // === Extractions ===
@@ -180,6 +223,32 @@ class ApiService {
 
   async getUsers(): Promise<any> {
     return this.request('/data/users');
+  }
+
+  async createUser(data: {
+    username: string;
+    password: string;
+    name: string;
+    role?: string;
+  }): Promise<any> {
+    return this.request('/data/users', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateUser(
+    id: string,
+    data: { username?: string; password?: string; name?: string; role?: string },
+  ): Promise<any> {
+    return this.request(`/data/users/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteUser(id: string): Promise<any> {
+    return this.request(`/data/users/${id}`, { method: 'DELETE' });
   }
 
   // === Traçabilité ===
@@ -353,6 +422,73 @@ class ApiService {
       method: 'POST',
       body: JSON.stringify(config),
     });
+  }
+
+  // === Mine 4.0 Advanced API Methods ===
+  async getFleet(): Promise<any> {
+    return this.request('/fleet');
+  }
+
+  async setFleetTeleRemote(id: string, mode: 'tele-remote' | 'ahs'): Promise<any> {
+    return this.request(`/fleet/${id}/tele-remote`, {
+      method: 'POST',
+      body: JSON.stringify({ mode }),
+    });
+  }
+
+  async getMaintenanceLogs(): Promise<any> {
+    return this.request('/maintenance');
+  }
+
+  async getEsgMetrics(): Promise<any> {
+    return this.request('/esg');
+  }
+
+  async getGeotechSensors(): Promise<any> {
+    return this.request('/geotech');
+  }
+
+  async getAiPredictions(): Promise<any> {
+    return this.request('/ai');
+  }
+
+  async getDispatchMissions(): Promise<any> {
+    return this.request('/dispatch/missions');
+  }
+
+  async optimizeDispatch(): Promise<any> {
+    return this.request('/dispatch/optimize', { method: 'POST' });
+  }
+
+  async getEnergyMetrics(): Promise<any> {
+    return this.request('/energy/metrics');
+  }
+
+  async getWaterSensors(): Promise<any> {
+    return this.request('/water/sensors');
+  }
+
+  async getWeatherSite(): Promise<any> {
+    return this.request('/weather/site');
+  }
+
+  async getVisionCameras(): Promise<any> {
+    return this.request('/vision/cameras');
+  }
+
+  async getCrisisStatus(): Promise<any> {
+    return this.request('/crisis/status');
+  }
+
+  async triggerCrisis(action: 'evacuate' | 'confine' | 'reset' = 'evacuate'): Promise<any> {
+    return this.request('/crisis/trigger', {
+      method: 'POST',
+      body: JSON.stringify({ action }),
+    });
+  }
+
+  async getDirectorKpis(): Promise<any> {
+    return this.request('/director/kpis');
   }
 
   isAuthenticated(): boolean {

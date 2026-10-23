@@ -229,17 +229,26 @@ export default function MinerDetail({ miner, onClose }: MinerDetailProps) {
 
         {/* Action Buttons */}
         <div className="space-y-2">
-          <button className="w-full bg-accent-green text-white py-3 rounded-lg font-medium hover:bg-green-600 transition-colors">
+          <button
+            type="button"
+            onClick={() => navigate(`/communicate?miner=${encodeURIComponent(miner.id)}`)}
+            className="w-full bg-accent-green text-white py-3 rounded-lg font-medium hover:bg-green-600 transition-colors"
+          >
             Contacter le mineur
           </button>
           <button
-            onClick={() => navigate('/trajectories')}
+            type="button"
+            onClick={() => navigate('/localisation?tab=trajectoires')}
             className="w-full bg-[#334155] text-white py-3 rounded-lg font-medium hover:bg-gray-600 transition-colors border border-gray-700"
           >
             Voir l'historique complet
           </button>
           {miner.status === 'danger' && (
-            <button className="w-full bg-accent-red text-white py-3 rounded-lg font-medium hover:bg-red-600 transition-colors">
+            <button
+              type="button"
+              onClick={() => navigate('/crisis-center')}
+              className="w-full bg-accent-red text-white py-3 rounded-lg font-medium hover:bg-red-600 transition-colors"
+            >
               Déclencher l'alerte d'urgence
             </button>
           )}

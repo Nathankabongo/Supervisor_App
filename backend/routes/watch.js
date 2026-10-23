@@ -116,8 +116,11 @@ router.post('/sos', (req, res) => {
         const miner = db.prepare('SELECT * FROM miners WHERE matricule = ?').get(matricule);
         
         if (miner) {
+            const hasGps = Number(data.lat) && Number(data.lng);
             const mapData = gpsToLocalMap(data.lat, data.lng);
-            const zone = mapData.zone;
+            const zone = hasGps
+              ? (mapData.zone || miner.zone || 'ZONE B')
+              : (miner.zone || mapData.zone || 'ZONE B');
             
             db.prepare('UPDATE miners SET status=?, last_update=datetime(\'now\') WHERE id=?')
               .run('danger', miner.id);
@@ -127,20 +130,18 @@ router.post('/sos', (req, res) => {
             db.prepare('INSERT INTO trace_events (id, miner_id, miner_name, event_type, zone, details) VALUES (?, ?, ?, ?, ?, ?)')
               .run(trId, miner.id, miner.name, 'alert', zone, msg);
 
-            // Alert
-            const alertId = `alert-${Date.now()}`;
-            db.prepare('INSERT INTO alerts (id, minerId, minerName, type, severity, message, zone, timestamp, resolved) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)')
-              .run(alertId, miner.id, miner.name, type, 'high', msg, zone, Date.now());
-
-            // Map to internal alert format
-            realTimeDataService.processLoRaData({
+            // Une seule création d'alerte (DB + broadcast) via processLoRaData → createAlertFromWatch
+            const alert = realTimeDataService.processLoRaData({
                 type: 'alert',
                 minerId: miner.id,
                 alertType: type,
                 severity: 'high',
                 message: msg,
                 connectionType: 'wifi',
-                zone: zone
+                zone: zone,
+                // Capteurs uniquement s'ils sont fournis par la montre
+                ...(data.heartRate != null ? { heartRate: data.heartRate } : {}),
+                ...(data.seismicHz != null ? { seismicHz: data.seismicHz } : {}),
             });
             
             // Update miner status to danger
@@ -148,10 +149,18 @@ router.post('/sos', (req, res) => {
                 type: 'status',
                 minerId: miner.id,
                 status: 'danger',
-                connectionType: 'wifi'
+                connectionType: 'wifi',
+                ...(data.heartRate != null ? { heartRate: data.heartRate } : {}),
+                ...(data.seismicHz != null ? { seismicHz: data.seismicHz } : {}),
             });
 
-            return res.json({ ok: true, minerName: miner.name });
+            return res.json({
+                ok: true,
+                minerName: miner.name,
+                alertId: alert?.id || null,
+                zone,
+                source: alert?.source || 'LILYGO_INCIDENT',
+            });
         }
     }
 

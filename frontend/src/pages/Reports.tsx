@@ -118,9 +118,18 @@ export default function Reports() {
       // Zones at risk (zones with alerts)
       const riskZones = Array.from(new Set(allAlerts.map((a: any) => a.zone))).filter(Boolean);
 
-      // Average response time (from alerts resolved)
-      // Since resolved timestamp is not stored in DB, we mock average resolution between 3 and 12 mins
-      const avgResponse = allAlerts.length > 0 ? '6 min 42s' : 'Aucune intervention';
+      // Average response time calculated dynamically from resolved alerts
+      const resolvedAlerts = allAlerts.filter((a: any) => a.resolved && (a.resolvedAt || a.resolved_at) && a.timestamp);
+      let avgResponse = 'Aucune intervention';
+      if (resolvedAlerts.length > 0) {
+        const totalDurationMs = resolvedAlerts.reduce((acc: number, a: any) => acc + ((a.resolvedAt || a.resolved_at) - a.timestamp), 0);
+        const avgMs = Math.max(0, totalDurationMs / resolvedAlerts.length);
+        const minutes = Math.floor(avgMs / 60000);
+        const seconds = Math.floor((avgMs % 60000) / 1000);
+        avgResponse = `${minutes} min ${seconds}s`;
+      } else if (allAlerts.length > 0) {
+        avgResponse = 'En attente de résolution';
+      }
 
       setGeneratedReport({
         type: 'site',

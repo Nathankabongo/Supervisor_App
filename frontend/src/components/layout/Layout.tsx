@@ -1,4 +1,5 @@
-import { ReactNode, useState, useEffect, useRef } from 'react';
+import { ReactNode, useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import Topbar from './Topbar';
 import { useStore } from '../../store/useStore';
@@ -11,101 +12,149 @@ interface LayoutProps {
   onLogout?: () => void;
 }
 
+const WATCH_ALERT_TOAST_MS = 18000;
+
+function isWatchUrgency(alert: { type?: string; source?: string } | null) {
+  if (!alert) return false;
+  return (
+    alert.type === 'emergency' ||
+    alert.type === 'fall' ||
+    alert.source === 'LILYGO_INCIDENT'
+  );
+}
+
+function watchAlertTitle(alert: { type?: string }) {
+  if (alert.type === 'emergency') return 'BOUTON SOS ACTIVÉ';
+  if (alert.type === 'fall') return 'CHUTE DÉTECTÉE';
+  return 'ALERTE CRITIQUE';
+}
+
 export default function Layout({ children, currentPage, onPageChange, onLogout }: LayoutProps) {
-  const { alerts, miners, setSelectedMiner } = useStore();
+  const navigate = useNavigate();
+  const { miners, setSelectedMiner } = useStore();
+  const liveToastAlert = useStore((state) => state.liveToastAlert);
+  const setLiveToastAlert = useStore((state) => state.setLiveToastAlert);
   const [latestToast, setLatestToast] = useState<any>(null);
   const [showToast, setShowToast] = useState(false);
-  const prevAlertsLength = useRef(alerts.length);
 
   useEffect(() => {
-    // Detect new alerts
-    if (alerts.length > prevAlertsLength.current) {
-      const newAlert = alerts[0];
-      if (newAlert && !newAlert.resolved) {
-        setLatestToast(newAlert);
-        
-        // Afficher la notification POPUP uniquement pour les vrais SOS
-        if (newAlert.type === 'emergency') {
-          setShowToast(true);
-          
-          // Auto-dismiss after 8 seconds
-          const timer = setTimeout(() => {
-            setShowToast(false);
-          }, 8000);
-          return () => clearTimeout(timer);
-        }
+    if (liveToastAlert && !liveToastAlert.resolved) {
+      const isLilygo =
+        liveToastAlert.type === 'emergency' ||
+        liveToastAlert.type === 'fall' ||
+        liveToastAlert.source === 'LILYGO_INCIDENT' ||
+        liveToastAlert.source === 'SYSTEM' ||
+        liveToastAlert.source === 'MANUAL';
+      if (isLilygo) {
+        setLatestToast(liveToastAlert);
+        setShowToast(true);
+
+        const holdMs = isWatchUrgency(liveToastAlert) ? WATCH_ALERT_TOAST_MS : 10000;
+        const timer = setTimeout(() => {
+          setShowToast(false);
+          setLiveToastAlert(null);
+        }, holdMs);
+        return () => clearTimeout(timer);
       }
     }
-    prevAlertsLength.current = alerts.length;
-  }, [alerts]);
+  }, [liveToastAlert, liveToastAlert?.id, setLiveToastAlert]);
 
-  // Web Audio Alarm synthesis
   useEffect(() => {
-    if (showToast && latestToast) {
-      try {
-        const audioCtx = new (window.AudioContext || (window as any).webkitAudioCtx)();
-        
-        const playBeep = (freq: number, duration: number, delay: number) => {
-          const osc = audioCtx.createOscillator();
-          const gain = audioCtx.createGain();
-          osc.type = 'sine';
-          osc.frequency.setValueAtTime(freq, audioCtx.currentTime + delay);
-          gain.gain.setValueAtTime(0.15, audioCtx.currentTime + delay);
-          gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + delay + duration - 0.02);
-          osc.connect(gain);
-          gain.connect(audioCtx.destination);
-          osc.start(audioCtx.currentTime + delay);
-          osc.stop(audioCtx.currentTime + delay + duration);
-        };
+    if (!showToast || !latestToast) return;
 
-        const isCritical = latestToast.type === 'emergency' || latestToast.severity === 'high';
-        if (isCritical) {
-          // Play repeating warning chime
-          playBeep(880, 0.15, 0);
-          playBeep(880, 0.15, 0.25);
-          playBeep(880, 0.15, 0.5);
+    let audioCtx: AudioContext | null = null;
+    let intervalId: number | undefined;
+
+    const playBurst = () => {
+      try {
+        const Ctx = window.AudioContext || (window as any).webkitAudioContext;
+        if (!Ctx) return;
+        if (!audioCtx) audioCtx = new Ctx();
+        const ctx = audioCtx;
+        const beep = (freq: number, duration: number, delay: number) => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = 'square';
+          osc.frequency.setValueAtTime(freq, ctx.currentTime + delay);
+          gain.gain.setValueAtTime(0.12, ctx.currentTime + delay);
+          gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + delay + duration - 0.02);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start(ctx.currentTime + delay);
+          osc.stop(ctx.currentTime + delay + duration);
+        };
+        if (latestToast.type === 'emergency') {
+          beep(880, 0.18, 0);
+          beep(880, 0.18, 0.28);
+          beep(660, 0.22, 0.56);
+        } else if (latestToast.type === 'fall') {
+          beep(740, 0.2, 0);
+          beep(520, 0.25, 0.28);
         } else {
-          // Play warning chime
-          playBeep(587.33, 0.2, 0);
-          playBeep(880, 0.25, 0.15);
+          beep(587.33, 0.2, 0);
+          beep(880, 0.25, 0.15);
         }
       } catch (e) {
         console.warn('Audio notification failed:', e);
       }
+    };
+
+    playBurst();
+    if (isWatchUrgency(latestToast)) {
+      intervalId = window.setInterval(playBurst, 1200);
     }
-  }, [showToast, latestToast]);
+
+    return () => {
+      if (intervalId) window.clearInterval(intervalId);
+      if (audioCtx) {
+        audioCtx.close().catch(() => undefined);
+      }
+    };
+  }, [showToast, latestToast, latestToast?.id]);
+
+  const dismissToast = () => {
+    setShowToast(false);
+    setLiveToastAlert(null);
+  };
 
   const handleLocateMiner = () => {
     if (!latestToast) return;
-    const miner = miners.find((m) => m.id === latestToast.minerId);
-    if (miner) {
-      setSelectedMiner(miner);
-      onPageChange('dashboard');
+    const isUrgency =
+      latestToast.type === 'emergency' || latestToast.type === 'fall';
+    if (!isUrgency || latestToast.resolved) {
+      dismissToast();
+      return;
     }
-    setShowToast(false);
+    const miner = miners.find((m) => m.id === latestToast.minerId);
+    const hasWatch = miner ? !!(miner.watchId || (miner as { watch_id?: string }).watch_id) : false;
+    if (miner && hasWatch) {
+      setSelectedMiner(miner);
+      navigate('/localisation?tab=evacuation');
+    }
+    dismissToast();
   };
 
   return (
-    <div className="flex min-h-screen bg-[#0f172a] relative overflow-hidden">
+    <div className="flex h-screen bg-[#0f172a] relative overflow-hidden">
       <Sidebar currentPage={currentPage} onPageChange={onPageChange} onLogout={onLogout} />
-      <div className="flex-1 flex flex-col">
+      <div className="flex-1 flex flex-col h-screen overflow-hidden">
         <Topbar />
-        <main className="flex-1 overflow-auto">{children}</main>
+        <main className="flex-1 overflow-y-auto">{children}</main>
       </div>
 
-      {/* Global Real-time Alert Toast Notification */}
       {showToast && latestToast && (
         <div className={`fixed top-4 right-4 z-50 max-w-sm w-full p-4 rounded-xl border shadow-2xl transition-all duration-500 transform translate-x-0 ${
-          latestToast.type === 'emergency' || latestToast.severity === 'high'
+          latestToast.type === 'emergency' || latestToast.type === 'fall' || latestToast.severity === 'high'
             ? 'bg-red-950/90 border-red-500 text-white shadow-[0_0_25px_rgba(239,68,68,0.25)]'
             : 'bg-orange-950/90 border-orange-500 text-white shadow-[0_0_25px_rgba(249,115,22,0.25)]'
         }`}>
-          {/* Pulse ring indicator */}
           <div className="absolute top-3 left-3 w-2.5 h-2.5 rounded-full bg-current animate-ping pointer-events-none opacity-75" />
-          
+
           <div className="flex items-start gap-3 pl-2.5">
             <div className={`p-2 rounded-lg shrink-0 mt-0.5 ${
-              latestToast.type === 'emergency' || latestToast.severity === 'high' ? 'bg-red-500/20 text-red-400' : 'bg-orange-500/20 text-orange-400'
+              latestToast.type === 'emergency' || latestToast.type === 'fall' || latestToast.severity === 'high'
+                ? 'bg-red-500/20 text-red-400'
+                : 'bg-orange-500/20 text-orange-400'
             }`}>
               <AlertTriangle size={20} className="animate-bounce" />
             </div>
@@ -113,10 +162,10 @@ export default function Layout({ children, currentPage, onPageChange, onLogout }
             <div className="flex-1 min-w-0">
               <div className="flex items-center justify-between">
                 <span className="text-[10px] font-extrabold uppercase tracking-widest text-red-400">
-                  {latestToast.type === 'emergency' ? '🚨 BOUTON SOS ACTIVÉ' : '⚠️ ALERTE CRITIQUE'}
+                  {watchAlertTitle(latestToast)}
                 </span>
-                <button 
-                  onClick={() => setShowToast(false)}
+                <button
+                  onClick={dismissToast}
                   className="text-gray-400 hover:text-white transition-colors"
                 >
                   <X size={16} />
@@ -124,11 +173,11 @@ export default function Layout({ children, currentPage, onPageChange, onLogout }
               </div>
 
               <h4 className="text-sm font-bold mt-1 text-white truncate">
-                Urgence Signalée par {latestToast.minerName}
+                {latestToast.minerName || 'INCIDENT DE ZONE'}
               </h4>
-              
+
               <p className="text-xs text-slate-300 mt-1 leading-relaxed">
-                {latestToast.message || "Un incident a été signalé depuis la montre du mineur."}
+                {latestToast.message || 'Un incident a été signalé.'}
               </p>
 
               {latestToast.predictedCause && (
@@ -138,15 +187,16 @@ export default function Layout({ children, currentPage, onPageChange, onLogout }
                 </div>
               )}
 
-              {/* Position details */}
               <div className="flex items-center gap-1.5 mt-3 text-xs bg-black/40 px-2.5 py-1.5 rounded border border-gray-800">
                 <MapPin size={12} className="text-cyan-400" />
                 <span className="text-slate-300 font-medium truncate">
-                  Zone d'exploitation : <strong className="text-white">{latestToast.zone || 'ZONE A'}</strong>
+                  Zone d&apos;exploitation :{' '}
+                  <strong className="text-white">
+                    {latestToast.zone || 'Zone inconnue (montre)'}
+                  </strong>
                 </span>
               </div>
 
-              {/* Action buttons */}
               <div className="flex items-center gap-2 mt-4">
                 <button
                   onClick={handleLocateMiner}
@@ -155,7 +205,7 @@ export default function Layout({ children, currentPage, onPageChange, onLogout }
                   Localiser le mineur
                 </button>
                 <button
-                  onClick={() => setShowToast(false)}
+                  onClick={dismissToast}
                   className="px-3 py-1.5 bg-[#334155]/60 hover:bg-[#334155] border border-gray-700 rounded text-slate-300 hover:text-white text-xs font-semibold transition-all"
                 >
                   Ignorer

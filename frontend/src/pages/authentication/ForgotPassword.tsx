@@ -1,22 +1,30 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Mail, Wifi, CheckCircle } from 'lucide-react';
+import apiService from '../../services/api';
 
 export default function ForgotPassword() {
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
+  const [newPassword, setNewPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
+    setError(null);
 
-    // Simulation d'envoi d'email
-    setTimeout(() => {
-      setIsLoading(false);
+    try {
+      const username = email.split('@')[0];
+      await apiService.forgotPassword(username, newPassword || undefined);
       setIsSuccess(true);
-    }, 1500);
+    } catch (err: any) {
+      setError(err.message || 'Erreur lors de la réinitialisation');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   if (isSuccess) {
@@ -85,24 +93,42 @@ export default function ForgotPassword() {
             de passe.
           </p>
 
+          {error && (
+            <div className="mb-4 p-3 bg-red-500/20 border border-red-500/50 rounded-lg text-red-300 text-xs">
+              {error}
+            </div>
+          )}
+
           <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Email */}
+            {/* Email / Username */}
             <div>
-              <label className="block text-sm text-gray-300 mb-2">Email</label>
+              <label className="block text-sm text-gray-300 mb-2">Identifiant / Email</label>
               <div className="relative">
                 <Mail
                   size={18}
                   className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
                 />
                 <input
-                  type="email"
+                  type="text"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="votre@email.com"
+                  placeholder="supervisor"
                   className="w-full bg-[#0b1a2a] border border-gray-700 rounded-lg pl-10 pr-4 py-3 text-white placeholder-gray-500 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 transition-colors"
                   required
                 />
               </div>
+            </div>
+
+            {/* Nouveau mot de passe (optionnel) */}
+            <div>
+              <label className="block text-sm text-gray-300 mb-2">Nouveau mot de passe</label>
+              <input
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="••••••••"
+                className="w-full bg-[#0b1a2a] border border-gray-700 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 transition-colors text-sm"
+              />
             </div>
 
             {/* Submit Button */}
@@ -114,10 +140,10 @@ export default function ForgotPassword() {
               {isLoading ? (
                 <>
                   <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  Envoi en cours...
+                  Réinitialisation...
                 </>
               ) : (
-                'Envoyer le lien'
+                'Réinitialiser le mot de passe'
               )}
             </button>
           </form>

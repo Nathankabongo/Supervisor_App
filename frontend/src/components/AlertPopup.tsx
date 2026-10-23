@@ -16,7 +16,7 @@ export default function AlertPopup({ alert, onClose, onResolve }: AlertPopupProp
     const timer = setTimeout(() => {
       setIsVisible(false);
       setTimeout(onClose, 300);
-    }, 5000); // Auto-close after 5 seconds
+    }, 18000);
 
     return () => clearTimeout(timer);
   }, [onClose]);

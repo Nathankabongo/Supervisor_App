@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { useStore, TraceEvent, TraceEventType } from '../store/useStore';
-import apiService from '../services/api';
+import { useStore, TraceEvent, TraceEventType } from '../../store/useStore';
+import apiService from '../../services/api';
 import {
   Search,
   Download,
@@ -20,142 +20,7 @@ import {
   Milestone,
   LucideIcon,
 } from 'lucide-react';
-
-interface RouteProposal {
-  title: string;
-  distance: string;
-  estTime: string;
-  safetyGear: string[];
-  steps: string[];
-}
-
-function getRouteToMiner(zone: string, gallery: string): RouteProposal {
-  const upperZone = zone.toUpperCase();
-
-  if (upperZone.includes('ZONE A') || upperZone === 'A') {
-    return {
-      title: "Itinéraire d'accès : Mine à Ciel Ouvert (Zone A)",
-      distance: '1 200 m',
-      estTime: '6 min',
-      safetyGear: [
-        'Gilet de sécurité haute visibilité',
-        'Casque de protection avec visière',
-        'Chaussures de sécurité renforcées',
-      ],
-      steps: [
-        "Quitter le Centre de Contrôle de surface et s'équiper des EPI réglementaires de surface.",
-        "Prendre le véhicule utilitaire tout-terrain (4x4 d'intervention).",
-        "Emprunter la piste d'accès principale Nord pour descendre dans la fosse.",
-        `Suivre le balisage de sécurité en contournant la zone d'excavation active.`,
-        `Rejoindre à pied la section ${gallery || 'de liaison'} pour localiser le mineur.`,
-      ],
-    };
-  } else if (upperZone.includes('ZONE B') || upperZone === 'B') {
-    return {
-      title: "Itinéraire d'accès : Rampes de Transport (Zone B)",
-      distance: '1 500 m',
-      estTime: '8 min',
-      safetyGear: [
-        'Gilet de sécurité classe 3',
-        "Bouchons d'oreilles homologués",
-        'Lunettes de protection',
-      ],
-      steps: [
-        "Quitter le bâtiment technique et s'équiper du matériel de protection acoustique.",
-        'Suivre la route de service parallèle au convoyeur à bande principal.',
-        'Entrer dans la zone des rampes par le sas piéton sécurisé.',
-        `Rester vigilant vis-à-vis des tombereaux lourds CAT en phase de descente/remontée.`,
-        `Entrer dans le secteur de rampe ou galerie (${gallery || 'Rampe Principale'}) pour intercepter le mineur.`,
-      ],
-    };
-  } else if (upperZone.includes('ZONE C') || upperZone === 'C') {
-    return {
-      title: "Itinéraire d'accès : Raffinerie & Traitement (Zone C)",
-      distance: '600 m',
-      estTime: '4 min',
-      safetyGear: [
-        'Masque de protection FFP3 anti-poussière',
-        'Lunettes de protection étanches',
-        'Casque avec jugulaire',
-      ],
-      steps: [
-        'Passer par le sas de décontamination de la Raffinerie Est et enfiler le masque respiratoire.',
-        'Prendre la passerelle métallique surélevée surplombant le broyeur primaire.',
-        'Descendre les escaliers techniques menant aux cellules de flottation.',
-        `Traverser la galerie technique de distribution hydraulique.`,
-        `Entrer dans la salle de commande ou le secteur d'usine spécifié (${gallery || 'Flottation'}).`,
-      ],
-    };
-  } else if (upperZone.includes('ZONE D') || upperZone === 'D') {
-    return {
-      title: "Itinéraire d'accès : Niveau -100m (Stockage - Zone D)",
-      distance: '800 m (dont 100m verticaux)',
-      estTime: '11 min',
-      safetyGear: [
-        'Auto-sauveteur autonome (type oxygène chimique)',
-        'Lampe frontale de mineur chargée',
-        'Détecteur multi-gaz portable (CO/O2/H2S)',
-      ],
-      steps: [
-        "Se diriger vers le Puits d'Accès Principal et embarquer dans la cage d'ascenseur n°1.",
-        'Demander le palier Niveau -100m au pupitre de commande.',
-        "À la sortie de la cage, vérifier l'affichage fixe des conditions de gaz.",
-        'Progresser dans la galerie principale de liaison Est sous ventilation forcée.',
-        `Tourner à gauche après la porte coupe-feu vers la galerie de stockage (${gallery || 'Galerie D'}).`,
-      ],
-    };
-  } else if (upperZone.includes('ZONE E') || upperZone === 'E') {
-    return {
-      title: "Itinéraire d'accès : Niveau -200m (Atelier - Zone E)",
-      distance: '1 100 m (dont 200m verticaux)',
-      estTime: '14 min',
-      safetyGear: [
-        'Auto-sauveteur de ceinture',
-        'Lampe de casque ATEX',
-        'Détecteur multigaz CO/CH4',
-        'Gants de protection mécanique',
-      ],
-      steps: [
-        'Accéder au puits de service n°2 (cage principale lourde).',
-        "Effectuer la descente jusqu'au Niveau -200m.",
-        "Quitter la recette du puits et s'engager dans la galerie de transport de matériel.",
-        'Emprunter le by-pass piéton balisé en vert pour éviter les chargeuses souterraines (LHD).',
-        `Pénétrer dans le hall d'entretien mécanique ou la galerie secondaire (${gallery || 'Atelier E'}).`,
-      ],
-    };
-  } else if (upperZone.includes('ZONE F') || upperZone === 'F') {
-    return {
-      title: "Itinéraire d'accès : Niveau -300m (Front de taille - Zone F)",
-      distance: '1 400 m (dont 300m verticaux)',
-      estTime: '18 min',
-      safetyGear: [
-        'Auto-sauveteur de secours autonome (obligatoire)',
-        'Lampe de sécurité frontale ATEX',
-        'Explosimètre individuel réglé',
-        'Vêtements de protection antistatiques',
-      ],
-      steps: [
-        "Se présenter au puits d'accès rapide n°1 (descente rapide autorisée).",
-        "Descendre au Niveau -300m (fond de mine sous haute pression d'aération).",
-        'Suivre le boyau principal Ouest en restant près de la ligne de guidage.',
-        'Traverser le sas de ventilation n°4 (équilibrage de pression).',
-        `Avancer avec prudence jusqu'au front de taille ou la galerie active (${gallery || 'Galerie F'}).`,
-      ],
-    };
-  } else {
-    return {
-      title: `Itinéraire d'accès : ${zone}`,
-      distance: 'Variable',
-      estTime: 'Non spécifié',
-      safetyGear: ['Équipements de protection individuelle standards'],
-      steps: [
-        "Consulter le poste de commandement pour autorisation d'accès.",
-        `Respecter la signalétique de sécurité propre à la ${zone}.`,
-        `Progresser vers la galerie ${gallery || 'principale'}.`,
-      ],
-    };
-  }
-}
+import { getRouteToMiner } from './evacuationRoutes';
 
 const EVENT_CONFIG: Record<
   TraceEventType,
@@ -201,8 +66,8 @@ interface TraceStats {
   uniqueMiners?: number;
 }
 
-export default function Traceability() {
-  const { traceEvents, miners } = useStore();
+export default function TraceabilityPanel() {
+  const { traceEvents, miners, selectedMiner: storeSelectedMiner } = useStore();
   const [events, setEvents] = useState<TraceEvent[]>(
     traceEvents.length > 0 ? traceEvents : [],
   );
@@ -212,6 +77,12 @@ export default function Traceability() {
   const [filterType, setFilterType] = useState('all');
   const [selectedMiner, setSelectedMiner] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  // Sélection provenant d'une alerte SOS / notification (store global)
+  useEffect(() => {
+    if (!storeSelectedMiner) return;
+    setSelectedMiner(storeSelectedMiner.id);
+  }, [storeSelectedMiner]);
 
   // Access Control Pointage State
   const [acMinerId, setAcMinerId] = useState('');
@@ -264,9 +135,8 @@ export default function Traceability() {
       (selectedMinerName && m.name.toLowerCase() === selectedMinerName.toLowerCase()),
   );
 
-  const activeZone = selectedMinerProfile?.currentZone || selectedEventForName?.zone || 'ZONE A';
-  const activeGallery =
-    selectedMinerProfile?.currentGallery || selectedEventForName?.gallery || 'Galerie 1';
+  const activeZone = selectedMinerProfile?.currentZone || selectedEventForName?.zone || '';
+  const activeGallery = selectedMinerProfile?.currentGallery || selectedEventForName?.gallery || '';
 
   // Coordonnées des centres de zones pour tracé et mini-carte
   const ZONE_CENTERS: Record<
@@ -323,25 +193,13 @@ export default function Traceability() {
     },
   };
 
-  const getFallbackTrajectoryForZone = (zoneName: string) => {
-    const center = ZONE_CENTERS[zoneName] || ZONE_CENTERS['ZONE A'];
-    return [
-      { x: center.x - 50, y: center.y - 15, timestamp: Date.now() - 300000 },
-      { x: center.x - 20, y: center.y + 15, timestamp: Date.now() - 150000 },
-      { x: center.x, y: center.y, timestamp: Date.now() },
-    ];
-  };
+  const activePosition = selectedMinerProfile?.position || null;
 
-  const activePosition = selectedMinerProfile?.position || {
-    x: (ZONE_CENTERS[activeZone] || ZONE_CENTERS['ZONE A']).x,
-    y: (ZONE_CENTERS[activeZone] || ZONE_CENTERS['ZONE A']).y,
-    timestamp: Date.now(),
-  };
-
+  /** Trajectoire réelle uniquement (store / GPS montre) — jamais inventée. */
   const activeTrajectory =
     selectedMinerProfile?.trajectory && selectedMinerProfile.trajectory.length > 0
       ? selectedMinerProfile.trajectory
-      : getFallbackTrajectoryForZone(activeZone);
+      : [];
 
   const routeProposal = selectedMiner ? getRouteToMiner(activeZone, activeGallery) : null;
 
@@ -441,7 +299,46 @@ export default function Traceability() {
               <p className="text-sm text-gray-400">Suivi des mouvements et activités des mineurs</p>
             </div>
           </div>
-          <button className="flex items-center gap-2 px-4 py-2 bg-green-500 hover:bg-green-600 text-white text-sm rounded font-medium transition-colors" onClick={() => alert('Fonctionnalité en cours de développement')}>
+          <button
+            type="button"
+            className="flex items-center gap-2 px-4 py-2 bg-green-500 hover:bg-green-600 text-white text-sm rounded font-medium transition-colors"
+            onClick={() => {
+              const rows = filteredEvents.length ? filteredEvents : events;
+              if (!rows.length) {
+                window.alert('Aucun événement à exporter');
+                return;
+              }
+              const header = ['Date', 'Heure', 'Mineur', 'Type', 'Zone', 'Galerie', 'Détails', 'Durée (min)'];
+              const csvRows = rows.map((e) => {
+                const d = new Date(e.timestamp);
+                const date = isNaN(d.getTime()) ? '' : d.toLocaleDateString('fr-FR');
+                const time = isNaN(d.getTime())
+                  ? ''
+                  : d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+                return [
+                  date,
+                  time,
+                  e.minerName,
+                  e.eventType,
+                  e.zone,
+                  e.gallery || '',
+                  (e.details || '').replace(/"/g, '""'),
+                  e.duration ?? '',
+                ]
+                  .map((cell) => `"${cell}"`)
+                  .join(';');
+              });
+              const blob = new Blob([[header.join(';'), ...csvRows].join('\n')], {
+                type: 'text/csv;charset=utf-8;',
+              });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = `tracabilite_${new Date().toISOString().slice(0, 10)}.csv`;
+              a.click();
+              URL.revokeObjectURL(url);
+            }}
+          >
             <Download size={16} />
             Exporter
           </button>
@@ -1041,7 +938,8 @@ export default function Traceability() {
                       />
                     )}
 
-                    {/* Blinking helmet / location marker of the selected miner */}
+                    {/* Marker uniquement si position réelle reçue de la montre / store */}
+                    {activePosition && (
                     <g transform={`translate(${activePosition.x}, ${activePosition.y})`}>
                       {/* Pulsating background circle */}
                       <circle
@@ -1080,8 +978,10 @@ export default function Traceability() {
                         👷
                       </text>
                     </g>
+                    )}
 
                     {/* Floating miner name card */}
+                    {activePosition && (
                     <g transform={`translate(${activePosition.x}, ${activePosition.y - 30})`}>
                       <rect
                         x="-60"
@@ -1113,22 +1013,26 @@ export default function Traceability() {
                           .join(' ') || selectedMinerName}
                       </text>
                     </g>
+                    )}
                   </svg>
 
                   {/* Miner metadata badge overlay */}
                   <div className="absolute bottom-4 left-4 bg-slate-900/90 border border-slate-700 px-2 py-1 rounded flex flex-col gap-0.5 text-[9px] shadow-lg">
                     <span className="text-gray-400">Position :</span>
                     <span className="text-white font-semibold">
-                      {activeZone} • {activeGallery}
+                      {activeZone || 'Zone inconnue'}
+                      {activeGallery ? ` • ${activeGallery}` : ''}
                     </span>
                     <span className="text-gray-500 font-mono">
-                      Coords: {Math.round(activePosition.x)}X, {Math.round(activePosition.y)}Y
+                      {activePosition
+                        ? `Coords: ${Math.round(activePosition.x)}X, ${Math.round(activePosition.y)}Y`
+                        : 'Aucun déplacement reçu de la montre'}
                     </span>
                   </div>
                 </div>
               </div>
 
-              {/* Itinerary Planner Panel */}
+              {/* Itinerary Planner Panel — procédure site si zone connue */}
               {routeProposal && (
                 <div className="bg-[#1e293b] rounded-lg border border-gray-700 p-3 space-y-3 flex-1 flex flex-col overflow-y-auto">
                   {/* Route Header */}
@@ -1136,10 +1040,11 @@ export default function Traceability() {
                     <div>
                       <h4 className="text-xs font-bold text-white tracking-wider flex items-center gap-1.5 uppercase">
                         <Compass size={14} className="text-cyan-400" />
-                        PROPOSITION D'ITINÉRAIRE
+                        PROCÉDURE D&apos;ACCÈS (ZONE)
                       </h4>
-                      <p className="text-[10px] text-gray-400 mt-0.5">
-                        Calculé depuis le Centre de Contrôle Principal
+                      <p className="text-[10px] text-amber-400/80 mt-0.5">
+                        Procédure opérationnelle pour {routeProposal.sourceZone} — pas de télémétrie
+                        live
                       </p>
                     </div>
                   </div>

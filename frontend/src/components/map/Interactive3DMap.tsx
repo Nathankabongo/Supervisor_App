@@ -24,6 +24,8 @@ interface Interactive3DMapProps {
   showGateways: boolean;
   gateways: { id: string; x: number; y: number; zone: string }[];
   selectedSite: 'all' | 'open_pit' | 'underground' | 'galleries';
+  /** Mise en avant forte du creuseur sélectionné (vue urgence / évacuation). */
+  urgencyFocus?: boolean;
 }
 
 export default function Interactive3DMap({
@@ -35,6 +37,7 @@ export default function Interactive3DMap({
   showGateways,
   gateways,
   selectedSite,
+  urgencyFocus = false,
 }: Interactive3DMapProps) {
   // 3D parameters
   const [pitch, setPitch] = useState(40); // Tilt (vertical angle)
@@ -1245,7 +1248,7 @@ export default function Interactive3DMap({
           {/* ========================================================
               3D TRAJECTORY LAYER (Isometric line paths)
               ======================================================== */}
-          {showTrajectories &&
+          {(showTrajectories || urgencyFocus) &&
             selectedMiner &&
             (() => {
               const minerZone = selectedMiner.currentZone;
@@ -1272,19 +1275,19 @@ export default function Interactive3DMap({
                   <path
                     d={pathD}
                     fill="none"
-                    stroke="#fbbf24"
-                    strokeWidth="3.5"
+                    stroke={urgencyFocus ? '#f87171' : '#fbbf24'}
+                    strokeWidth={urgencyFocus ? 4.5 : 3.5}
                     strokeLinecap="round"
                     strokeLinejoin="round"
-                    opacity="0.85"
-                    strokeDasharray="4,2"
+                    opacity="0.9"
+                    strokeDasharray={urgencyFocus ? '6,3' : '4,2'}
                   />
                   {/* Arrowhead at current position */}
                   <circle
                     cx={pts[pts.length - 1].x}
                     cy={pts[pts.length - 1].y}
-                    r="6"
-                    fill="#fbbf24"
+                    r={urgencyFocus ? 8 : 6}
+                    fill={urgencyFocus ? '#ef4444' : '#fbbf24'}
                     stroke="#fff"
                     strokeWidth="1.5"
                   />
@@ -1311,17 +1314,18 @@ export default function Interactive3DMap({
             const pt = project(miner.position.x, miner.position.y, mZone);
             const isSelected = selectedMiner?.id === miner.id;
             const vehicle = getMinerVehicle(miner);
+            const dimOther = urgencyFocus && selectedMiner && !isSelected;
 
             // Get color status
             const statusColor =
-              miner.status === 'danger'
+              miner.status === 'danger' || (urgencyFocus && isSelected)
                 ? '#ef4444'
                 : miner.status === 'warning'
                   ? '#f59e0b'
                   : '#10b981';
 
             const statusBg =
-              miner.status === 'danger'
+              miner.status === 'danger' || (urgencyFocus && isSelected)
                 ? 'rgba(239, 68, 68, 0.4)'
                 : miner.status === 'warning'
                   ? 'rgba(245, 158, 11, 0.3)'
@@ -1335,27 +1339,28 @@ export default function Interactive3DMap({
                 onMouseEnter={() => setHoveredMiner(miner)}
                 onMouseLeave={() => setHoveredMiner(null)}
                 className="cursor-pointer"
+                opacity={dimOther ? 0.28 : 1}
               >
-                {/* Pulsing ring for alerts */}
-                {showAlerts && miner.status === 'danger' && (
+                {/* Pulsing ring for alerts / urgence */}
+                {(showAlerts && miner.status === 'danger') || (urgencyFocus && isSelected) ? (
                   <ellipse
-                    rx="22"
-                    ry="11"
+                    rx={urgencyFocus && isSelected ? 28 : 22}
+                    ry={urgencyFocus && isSelected ? 14 : 11}
                     fill="none"
                     stroke="#ef4444"
-                    strokeWidth="2.5"
+                    strokeWidth={urgencyFocus && isSelected ? 3.5 : 2.5}
                     filter="url(#glow-danger)"
                     className="animate-ping"
                   />
-                )}
+                ) : null}
 
                 {/* Selection circle */}
                 {isSelected && (
                   <ellipse
-                    rx="18"
-                    ry="9"
+                    rx={urgencyFocus ? 24 : 18}
+                    ry={urgencyFocus ? 12 : 9}
                     fill="none"
-                    stroke="#ffffff"
+                    stroke={urgencyFocus ? '#fca5a5' : '#ffffff'}
                     strokeWidth="2.5"
                     className="animate-pulse"
                   />
@@ -1427,24 +1432,26 @@ export default function Interactive3DMap({
                 {(isSelected || hoveredMiner?.id === miner.id) && (
                   <g transform="translate(0, -32)">
                     <rect
-                      x="-35"
+                      x={urgencyFocus && isSelected ? -42 : -35}
                       y="-10"
-                      width="70"
+                      width={urgencyFocus && isSelected ? 84 : 70}
                       height="15"
                       rx="3"
                       fill="#0f172a"
-                      stroke="#fff"
-                      strokeWidth="0.5"
+                      stroke={urgencyFocus && isSelected ? '#ef4444' : '#fff'}
+                      strokeWidth={urgencyFocus && isSelected ? 1.2 : 0.5}
                     />
                     <text
                       x="0"
                       y="1"
                       fontSize="8"
-                      fill="#fff"
+                      fill={urgencyFocus && isSelected ? '#fca5a5' : '#fff'}
                       fontWeight="bold"
                       textAnchor="middle"
                     >
-                      {miner.name.split(' ')[0]}
+                      {urgencyFocus && isSelected
+                        ? `SOS · ${miner.name.split(' ')[0]}`
+                        : miner.name.split(' ')[0]}
                     </text>
                   </g>
                 )}

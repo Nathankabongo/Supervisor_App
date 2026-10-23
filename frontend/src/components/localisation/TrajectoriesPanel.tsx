@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Route, Search, Play, Pause, SkipBack, SkipForward } from 'lucide-react';
-import { useStore, Miner } from '../store/useStore';
-import Interactive3DMap, { getZoneForCoords } from '../components/map/Interactive3DMap';
+import { useStore, Miner } from '../../store/useStore';
+import Interactive3DMap, { getZoneForCoords } from '../map/Interactive3DMap';
 
 const ZONE_CENTERS: Record<
   string,
@@ -113,7 +113,7 @@ const getVehicleEmoji = (type: string) => {
   }
 };
 
-export default function Trajectories() {
+export default function TrajectoriesPanel() {
   const { miners, selectedMiner: storeSelectedMiner } = useStore();
   const [selectedMiner, setSelectedMiner] = useState<string | null>(null);
 
@@ -287,6 +287,15 @@ export default function Trajectories() {
                   <p className="text-white text-lg font-bold">{displaySelectedMiner?.currentZone || activeMiner.currentZone}</p>
                 </div>
               </div>
+
+              {activeMiner.trajectory.length < 2 && (
+                <div className="bg-[#1e293b] rounded border border-slate-700 p-4 text-center">
+                  <p className="text-sm text-slate-400">
+                    Aucun déplacement reçu de la montre pour {activeMiner.name}. La trajectoire
+                    s&apos;affiche uniquement à partir des points GPS transmis par la montre.
+                  </p>
+                </div>
+              )}
 
               {/* Map Preview */}
               <div className="bg-[#1e293b] rounded border border-gray-700 p-3">

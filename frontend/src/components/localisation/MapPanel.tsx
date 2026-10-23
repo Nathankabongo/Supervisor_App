@@ -1,17 +1,26 @@
 import { useState, useEffect } from 'react';
-import { useStore } from '../store/useStore';
-import MiningMap from '../components/map/MiningMap';
-import TrajectoryLayer from '../components/map/TrajectoryLayer';
-import MinerIcon from '../components/map/MinerIcon';
-import MinerDetail from '../components/MinerDetail';
-import SummaryCards from '../components/map/SummaryCards';
-import MapLegend from '../components/map/MapLegend';
-import MinersList from '../components/map/MinersList';
+import { useStore } from '../../store/useStore';
+import MiningMap from '../map/MiningMap';
+import TrajectoryLayer from '../map/TrajectoryLayer';
+import MinerIcon from '../map/MinerIcon';
+import MinerDetail from '../MinerDetail';
+import SummaryCards from '../map/SummaryCards';
+import MapLegend from '../map/MapLegend';
+import MinersList from '../map/MinersList';
 import { ZoomIn, ZoomOut, Home, Eye, EyeOff, Sun, Search, MapPin } from 'lucide-react';
-import Interactive3DMap from '../components/map/Interactive3DMap';
-import SatelliteMap from '../components/map/SatelliteMap';
+import Interactive3DMap from '../map/Interactive3DMap';
+import SatelliteMap from '../map/SatelliteMap';
 
-export default function MapView() {
+const SITE_ZONES = [
+  { id: 'ZONE A', short: 'A', label: 'Extraction', color: '#f97316' },
+  { id: 'ZONE B', short: 'B', label: 'Transport', color: '#3b82f6' },
+  { id: 'ZONE C', short: 'C', label: 'Ventilation', color: '#22c55e' },
+  { id: 'ZONE D', short: 'D', label: 'Stockage', color: '#a855f7' },
+  { id: 'ZONE E', short: 'E', label: 'Maintenance', color: '#ef4444' },
+  { id: 'ZONE F', short: 'F', label: 'Services', color: '#06b6d4' },
+] as const;
+
+export default function MapPanel() {
   const {
     miners,
     selectedMiner,
@@ -35,7 +44,7 @@ export default function MapView() {
   const [gisConfig, setGisConfig] = useState<any>(null);
 
   useEffect(() => {
-    import('../services/api').then(({ default: apiService }) => {
+    import('../../services/api').then(({ default: apiService }) => {
       apiService.getGisConfig().then((data) => {
         setGisConfig(data);
       }).catch(console.error);
@@ -101,18 +110,22 @@ export default function MapView() {
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Header */}
         <div className="bg-[#1e293b] border-b border-gray-700 px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <img src={`/Logo-with-text.png`} alt="SupervisorApp" className="h-10 w-auto" />
-              <h1 className="text-xl font-semibold text-white">Vue Globale du Site - Temps Réel</h1>
-              <p className="text-sm text-gray-400 mt-1">
-                Surveillance en temps réel des mineurs et des zones
-              </p>
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-4 min-w-0">
+              <img src={`/Logo-with-text.png`} alt="SupervisorApp" className="h-10 w-auto shrink-0" />
+              <div className="min-w-0">
+                <h1 className="text-xl font-semibold text-white truncate">
+                  Vue Globale du Site - Temps Réel
+                </h1>
+                <p className="text-sm text-gray-400 mt-0.5">
+                  Surveillance en temps réel des mineurs et des zones
+                </p>
+              </div>
             </div>
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3">
               <Sun
                 size={20}
-                className="text-gray-400 cursor-pointer hover:text-white transition-colors"
+                className="text-gray-400 cursor-pointer hover:text-white transition-colors shrink-0"
               />
               <select
                 value={selectedSite}
@@ -146,174 +159,225 @@ export default function MapView() {
             {/* Map & Filters Column */}
             <div className="col-span-1 lg:col-span-9 space-y-4">
               {/* Horizontal Filter Bar */}
-              <div className="bg-[#1e293b] rounded-xl p-4 border border-gray-700 flex flex-wrap gap-4 items-end">
-                {/* Search query input */}
-                <div className="flex-1 min-w-[200px]">
-                  <label className="text-xs text-gray-400 block mb-1">Rechercher un mineur</label>
-                  <div className="relative">
-                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                    <input
-                      type="text"
-                      placeholder="Nom, matricule..."
-                      value={filters.searchQuery || ''}
-                      onChange={(e) => setFilters({ ...filters, searchQuery: e.target.value })}
-                      className="w-full bg-[#0b1a2a] border border-gray-700 rounded-lg pl-9 pr-3 py-1.5 text-white text-xs placeholder-gray-500 focus:border-green-500 focus:outline-none transition-colors"
-                    />
+              <div className="bg-[#1e293b] rounded-xl border border-gray-700 overflow-hidden">
+                <div className="px-4 py-3 flex flex-wrap gap-4 items-end border-b border-gray-700/80">
+                  {/* Search */}
+                  <div className="flex-1 min-w-[200px]">
+                    <label className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 block mb-1">
+                      Rechercher un mineur
+                    </label>
+                    <div className="relative">
+                      <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                      <input
+                        type="text"
+                        placeholder="Nom, matricule..."
+                        value={filters.searchQuery || ''}
+                        onChange={(e) => setFilters({ ...filters, searchQuery: e.target.value })}
+                        className="w-full bg-[#0b1a2a] border border-gray-700 rounded-lg pl-9 pr-3 py-1.5 text-white text-xs placeholder-gray-500 focus:border-emerald-500 focus:outline-none transition-colors"
+                      />
+                    </div>
                   </div>
-                </div>
 
-                {/* Zone Filter */}
-                <div className="w-44">
-                  <label className="text-xs text-gray-400 block mb-1">Zone</label>
-                  <select
-                    value={filters.zone}
-                    onChange={(e) => setFilters({ ...filters, zone: e.target.value })}
-                    className="w-full bg-[#0b1a2a] border border-gray-700 rounded-lg px-3 py-1.5 text-white text-xs focus:border-green-500 focus:outline-none cursor-pointer"
+                  {/* Status */}
+                  <div className="w-40">
+                    <label className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 block mb-1">
+                      Statut de sécurité
+                    </label>
+                    <select
+                      value={filters.status}
+                      onChange={(e) => setFilters({ ...filters, status: e.target.value })}
+                      className="w-full bg-[#0b1a2a] border border-gray-700 rounded-lg px-3 py-1.5 text-white text-xs focus:border-emerald-500 focus:outline-none cursor-pointer"
+                    >
+                      <option value="all">Tous les statuts</option>
+                      <option value="safe">Normal (Sécurité)</option>
+                      <option value="warning">Avertissement</option>
+                      <option value="danger">Danger</option>
+                    </select>
+                  </div>
+
+                  {/* Role */}
+                  <div className="w-40">
+                    <label className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 block mb-1">
+                      Fonction
+                    </label>
+                    <select
+                      value={filters.role}
+                      onChange={(e) => setFilters({ ...filters, role: e.target.value })}
+                      className="w-full bg-[#0b1a2a] border border-gray-700 rounded-lg px-3 py-1.5 text-white text-xs focus:border-emerald-500 focus:outline-none cursor-pointer"
+                    >
+                      <option value="all">Toutes les fonctions</option>
+                      <option value="Creuseur">Creuseur</option>
+                      <option value="Transporteur">Transporteur</option>
+                      <option value="Technicien">Technicien</option>
+                      <option value="Superviseur">Superviseur</option>
+                      <option value="Médecin">Médecin</option>
+                    </select>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setFilters({ zone: 'all', status: 'all', role: 'all', searchQuery: '' })}
+                    className="bg-[#334155] hover:bg-gray-600 border border-gray-600 text-white px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors shrink-0"
                   >
-                    <option value="all">Toutes les zones</option>
-                    {gisConfig && gisConfig.zones && gisConfig.zones.map((zone: any) => (
-                      <option key={zone.name} value={zone.name}>{zone.name}</option>
-                    ))}
-                    {!gisConfig && (
-                      <>
-                        <option value="ZONE A">ZONE A - Extraction</option>
-                        <option value="ZONE B">ZONE B - Transport</option>
-                        <option value="ZONE C">ZONE C - Raffinerie</option>
-                        <option value="ZONE D">ZONE D - Stockage</option>
-                        <option value="ZONE E">ZONE E - Maintenance</option>
-                        <option value="ZONE F">ZONE F - Services</option>
-                      </>
-                    )}
-                  </select>
+                    Réinitialiser
+                  </button>
                 </div>
 
-                {/* Status Filter */}
-                <div className="w-40">
-                  <label className="text-xs text-gray-400 block mb-1">Statut de sécurité</label>
-                  <select
-                    value={filters.status}
-                    onChange={(e) => setFilters({ ...filters, status: e.target.value })}
-                    className="w-full bg-[#0b1a2a] border border-gray-700 rounded-lg px-3 py-1.5 text-white text-xs focus:border-green-500 focus:outline-none cursor-pointer"
+                {/* Zone chips — dedicated row for spatial filter */}
+                <div className="px-4 py-2.5 flex flex-wrap items-center gap-2 bg-[#0f172a]/40">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 w-10 shrink-0">
+                    Zone
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setFilters({ zone: 'all' })}
+                    className={`px-2.5 py-1 rounded-md text-[11px] font-semibold border transition-colors ${
+                      filters.zone === 'all'
+                        ? 'bg-slate-100 text-slate-900 border-slate-100'
+                        : 'bg-[#0b1a2a] text-slate-400 border-gray-700 hover:border-gray-500 hover:text-white'
+                    }`}
                   >
-                    <option value="all">Tous les statuts</option>
-                    <option value="safe">Normal (Sécurité)</option>
-                    <option value="warning">Avertissement</option>
-                    <option value="danger">Danger</option>
-                  </select>
+                    Toutes
+                  </button>
+                  {(gisConfig?.zones?.length
+                    ? gisConfig.zones.map((z: { name: string }) => {
+                        const meta = SITE_ZONES.find((s) => s.id === z.name);
+                        return {
+                          id: z.name,
+                          short: meta?.short ?? z.name.replace('ZONE ', ''),
+                          label: meta?.label ?? z.name,
+                          color: meta?.color ?? '#64748b',
+                        };
+                      })
+                    : SITE_ZONES
+                  ).map((zone: { id: string; short: string; label: string; color: string }) => {
+                    const active = filters.zone === zone.id;
+                    return (
+                      <button
+                        key={zone.id}
+                        type="button"
+                        title={`${zone.id} — ${zone.label}`}
+                        onClick={() => setFilters({ zone: active ? 'all' : zone.id })}
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-semibold border transition-colors ${
+                          active
+                            ? 'text-white border-transparent'
+                            : 'bg-[#0b1a2a] text-slate-300 border-gray-700 hover:border-gray-500'
+                        }`}
+                        style={
+                          active
+                            ? { backgroundColor: zone.color, borderColor: zone.color }
+                            : undefined
+                        }
+                      >
+                        <span
+                          className="w-1.5 h-1.5 rounded-full shrink-0"
+                          style={{ backgroundColor: active ? '#fff' : zone.color }}
+                        />
+                        {zone.short}
+                        <span
+                          className={`hidden md:inline font-normal ${
+                            active ? 'text-white/80' : 'text-slate-500'
+                          }`}
+                        >
+                          {zone.label}
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
-
-                {/* Role Filter */}
-                <div className="w-40">
-                  <label className="text-xs text-gray-400 block mb-1">Fonction</label>
-                  <select
-                    value={filters.role}
-                    onChange={(e) => setFilters({ ...filters, role: e.target.value })}
-                    className="w-full bg-[#0b1a2a] border border-gray-700 rounded-lg px-3 py-1.5 text-white text-xs focus:border-green-500 focus:outline-none cursor-pointer"
-                  >
-                    <option value="all">Toutes les fonctions</option>
-                    <option value="Creuseur">Creuseur</option>
-                    <option value="Transporteur">Transporteur</option>
-                    <option value="Technicien">Technicien</option>
-                    <option value="Superviseur">Superviseur</option>
-                    <option value="Médecin">Médecin</option>
-                  </select>
-                </div>
-
-                {/* Reset button */}
-                <button
-                  onClick={() => setFilters({ zone: 'all', status: 'all', role: 'all', searchQuery: '' })}
-                  className="bg-[#334155] hover:bg-gray-600 border border-gray-600 text-white px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors shrink-0"
-                >
-                  Réinitialiser
-                </button>
               </div>
 
               <div className="bg-[#1e293b] rounded-xl border border-gray-700 overflow-hidden">
                 {/* Map View Controls */}
-                <div className="px-4 py-3 border-b border-gray-700 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div className="flex items-center gap-2">
+                <div className="px-4 py-3 border-b border-gray-700 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                  <div className="flex flex-wrap items-center gap-3 min-w-0">
                     {mapMode === 'industrial' ? (
-                      <>
-                        <span className="text-sm text-gray-400">Vue par:</span>
-                        <button
-                          onClick={() => setViewBy('zone')}
-                          className={`px-3 py-1 rounded-lg text-sm font-medium transition-colors ${
-                            viewBy === 'zone'
-                              ? 'bg-blue-600 text-white'
-                              : 'bg-[#0b1a2a] text-gray-400 hover:text-white'
-                          }`}
-                        >
-                          Zone
-                        </button>
-                        <button
-                          onClick={() => setViewBy('gallery')}
-                          className={`px-3 py-1 rounded-lg text-sm font-medium transition-colors ${
-                            viewBy === 'gallery'
-                              ? 'bg-blue-600 text-white'
-                              : 'bg-[#0b1a2a] text-gray-400 hover:text-white'
-                          }`}
-                        >
-                          Galerie
-                        </button>
-                        <button
-                          onClick={() => setViewBy('level')}
-                          className={`px-3 py-1 rounded-lg text-sm font-medium transition-colors ${
-                            viewBy === 'level'
-                              ? 'bg-blue-600 text-white'
-                              : 'bg-[#0b1a2a] text-gray-400 hover:text-white'
-                          }`}
-                        >
-                          Niveau
-                        </button>
-                      </>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                          Vue par
+                        </span>
+                        <div className="inline-flex bg-[#0b1a2a] p-0.5 rounded-lg border border-gray-700">
+                          {(
+                            [
+                              { id: 'zone' as const, label: 'Zone' },
+                              { id: 'gallery' as const, label: 'Galerie' },
+                              { id: 'level' as const, label: 'Niveau' },
+                            ]
+                          ).map((mode) => (
+                            <button
+                              key={mode.id}
+                              type="button"
+                              onClick={() => setViewBy(mode.id)}
+                              className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-colors ${
+                                viewBy === mode.id
+                                  ? 'bg-emerald-600 text-white'
+                                  : 'text-slate-400 hover:text-white'
+                              }`}
+                            >
+                              {mode.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
                     ) : mapMode === 'satellite' ? (
-                      <span className="text-sm font-semibold text-green-400 flex items-center gap-1.5">
-                        🛰️ Vue Satellite (Kolwezi, RDC)
+                      <span className="text-sm font-semibold text-emerald-400">
+                        Vue Satellite (Kolwezi, RDC)
                       </span>
                     ) : mapMode === 'isometric' ? (
                       <span className="text-sm font-semibold text-cyan-400">
-                        📐 Vue 3D Isométrique
+                        Vue 3D Isométrique
                       </span>
                     ) : (
                       <span className="text-sm font-semibold text-purple-400">
-                        📍 Traçabilité & Chronologie
+                        Traçabilité & Chronologie
+                      </span>
+                    )}
+
+                    {filters.zone !== 'all' && (
+                      <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-slate-300 bg-[#0b1a2a] border border-gray-700 rounded-md px-2 py-0.5">
+                        <MapPin size={11} className="text-cyan-400" />
+                        Filtre : {filters.zone}
                       </span>
                     )}
                   </div>
 
                   {/* Mode Selector */}
-                  <div className="flex items-center bg-[#0b1a2a] p-1 rounded-lg border border-gray-700 flex-wrap gap-1">
+                  <div className="flex items-center bg-[#0b1a2a] p-1 rounded-lg border border-gray-700 flex-wrap gap-1 shrink-0">
                     <button
+                      type="button"
                       onClick={() => setMapMode('satellite')}
-                      className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors ${
+                      className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-colors ${
                         mapMode === 'satellite' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'
                       }`}
                     >
-                      🛰️ Satellite
+                      Satellite
                     </button>
                     <button
+                      type="button"
                       onClick={() => setMapMode('industrial')}
-                      className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors ${
+                      className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-colors ${
                         mapMode === 'industrial' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'
                       }`}
                     >
-                      🏢 Industrielle
+                      Industrielle
                     </button>
                     <button
+                      type="button"
                       onClick={() => setMapMode('isometric')}
-                      className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors ${
+                      className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-colors ${
                         mapMode === 'isometric' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'
                       }`}
                     >
-                      📐 Isométrique
+                      Isométrique
                     </button>
                     <button
+                      type="button"
                       onClick={() => setMapMode('timeline')}
-                      className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors ${
+                      className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-colors ${
                         mapMode === 'timeline' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'
                       }`}
                     >
-                      📍 Parcours
+                      Parcours
                     </button>
                   </div>
                 </div>
@@ -419,7 +483,9 @@ export default function MapView() {
                             })()}
                           </div>
                         ) : (
-                          <p className="text-sm text-gray-500 py-6 text-center">Aucune donnée de trajectoire disponible pour ce mineur.</p>
+                          <p className="text-sm text-gray-500 py-6 text-center">
+                            Aucun déplacement reçu de la montre.
+                          </p>
                         )}
                       </div>
                     ) : (

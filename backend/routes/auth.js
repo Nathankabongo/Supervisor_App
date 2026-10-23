@@ -44,6 +44,25 @@ router.post('/signup', async (req, res) => {
   res.status(201).json({ token, user: { id: result.lastInsertRowid, username, name, role: 'supervisor' } });
 });
 
+// Reset / Forgot Password
+router.post('/forgot-password', async (req, res) => {
+  const { username, newPassword } = req.body;
+  if (!username) return res.status(400).json({ error: 'Nom d\'utilisateur requis' });
+
+  const db = getDb();
+  const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
+  if (!user) return res.status(404).json({ error: 'Utilisateur introuvable' });
+
+  if (newPassword) {
+    if (newPassword.length < 6) return res.status(400).json({ error: 'Mot de passe min 6 caractères' });
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    db.prepare('UPDATE users SET password = ? WHERE id = ?').run(hashedPassword, user.id);
+    return res.json({ success: true, message: 'Mot de passe réinitialisé avec succès' });
+  }
+
+  res.json({ success: true, message: 'Utilisateur validé pour réinitialisation' });
+});
+
 // Logout
 router.post('/logout', (req, res) => res.json({ message: 'Déconnexion réussie' }));
 
@@ -60,3 +79,4 @@ router.get('/verify', (req, res) => {
 });
 
 export default router;
+

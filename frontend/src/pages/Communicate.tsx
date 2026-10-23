@@ -1,7 +1,9 @@
 import { useState, useRef, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useStore } from '../store/useStore';
 import apiService from '../services/api';
 import { io } from 'socket.io-client';
+import { SOCKET_URL } from '../config/urls';
 import {
   Send,
   Mic,
@@ -36,6 +38,7 @@ interface SentMessage {
 
 export default function Communicate() {
   const { miners } = useStore();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [recipientMode, setRecipientMode] = useState<RecipientMode>('all');
   const [messageType, setMessageType] = useState<MessageType>('text');
   const [textContent, setTextContent] = useState('');
@@ -50,6 +53,88 @@ export default function Communicate() {
   const [isPlayingVoice, setIsPlayingVoice] = useState(false);
   const [voiceProgress, setVoiceProgress] = useState(0);
   const recordingTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
+
+  // Préselection depuis MinerDetail (?miner=id)
+  useEffect(() => {
+    const minerId = searchParams.get('miner');
+    if (!minerId) return;
+    const exists = miners.some((m) => m.id === minerId);
+    if (!exists) return;
+    setRecipientMode('miner');
+    setSelectedZone('');
+    setSelectedMiners([minerId]);
+    setSearchParams({}, { replace: true });
+  }, [searchParams, miners, setSearchParams]);
+
+  const startRecordingAudio = async () => {
+    setIsPlayingVoice(false);
+    setAudioUrl(null);
+    setVoiceProgress(0);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      mediaRecorder.onstop = () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        const url = URL.createObjectURL(audioBlob);
+        setAudioUrl(url);
+        stream.getTracks().forEach((track) => track.stop());
+      };
+
+      mediaRecorder.start(100);
+      setIsRecording(true);
+      setRecordingDuration(0);
+    } catch {
+      setIsRecording(true);
+      setRecordingDuration(0);
+    }
+  };
+
+  const stopRecordingAudio = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop();
+    }
+    setIsRecording(false);
+  };
+
+  const togglePlayVoice = () => {
+    if (audioUrl) {
+      if (!audioPlayerRef.current) {
+        audioPlayerRef.current = new Audio(audioUrl);
+        audioPlayerRef.current.onended = () => {
+          setIsPlayingVoice(false);
+          setVoiceProgress(0);
+        };
+        audioPlayerRef.current.ontimeupdate = () => {
+          if (audioPlayerRef.current && audioPlayerRef.current.duration) {
+            setVoiceProgress((audioPlayerRef.current.currentTime / audioPlayerRef.current.duration) * 100);
+          }
+        };
+      }
+      if (isPlayingVoice) {
+        audioPlayerRef.current.pause();
+        setIsPlayingVoice(false);
+      } else {
+        audioPlayerRef.current.play();
+        setIsPlayingVoice(true);
+      }
+    } else {
+      setIsPlayingVoice(!isPlayingVoice);
+    }
+  };
 
   // Charger l'historique des messages au montage de la page
   useEffect(() => {
@@ -70,9 +155,6 @@ export default function Communicate() {
 
   // Écouter les mises à jour WebSocket pour le statut des messages (distribué/lu)
   useEffect(() => {
-    const host = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
-    const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || `http://${host}:5000`;
-    
     const socket = io(SOCKET_URL, {
       transports: ['websocket', 'polling'],
       reconnection: true,
@@ -680,7 +762,7 @@ export default function Communicate() {
                       </p>
                       <p className="text-[10px] text-red-400 font-semibold uppercase tracking-widest mt-1">Enregistrement en cours</p>
                       <button
-                        onClick={() => setIsRecording(false)}
+                        onClick={stopRecordingAudio}
                         className="mt-4 flex items-center gap-2 px-5 py-2.5 bg-red-500 hover:bg-red-600 text-white text-xs font-bold rounded-lg transition-all duration-300 shadow-lg shadow-red-500/20 active:scale-95 border border-red-400"
                       >
                         <MicOff size={14} />
@@ -693,7 +775,7 @@ export default function Communicate() {
                         <div className="w-full px-6 flex flex-col items-center">
                           <div className="w-full max-w-sm bg-slate-900 border border-slate-800 rounded-xl p-3 flex items-center gap-4 mb-4 shadow-md">
                             <button
-                              onClick={() => setIsPlayingVoice(!isPlayingVoice)}
+                              onClick={togglePlayVoice}
                               className="w-10 h-10 rounded-full bg-amber-500/20 border border-amber-500/30 flex items-center justify-center hover:bg-amber-500/30 transition-colors text-amber-400 shrink-0"
                             >
                               {isPlayingVoice ? <Pause size={16} /> : <Play size={16} className="ml-0.5" />}
@@ -735,10 +817,7 @@ export default function Communicate() {
 
                       <div className="flex items-center gap-3 mt-4">
                         <button
-                          onClick={() => {
-                            setIsPlayingVoice(false);
-                            setIsRecording(true);
-                          }}
+                          onClick={startRecordingAudio}
                           className="flex items-center gap-2 px-5 py-2.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-lg transition-all duration-300 shadow-lg shadow-amber-500/25 active:scale-95 border border-amber-400"
                         >
                           <Mic size={14} />

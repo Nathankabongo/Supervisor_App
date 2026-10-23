@@ -13,6 +13,19 @@ import { getDb } from './services/database.js';
 import { SerialPortManager } from './services/serialPort.js';
 import { WebSocketManager } from './services/websocket.js';
 import { RealTimeDataService } from './services/realTimeDataService.js';
+import fleetRoutes from './routes/fleet.js';
+import maintenanceRoutes from './routes/maintenance.js';
+import esgRoutes from './routes/esg.js';
+import geotechRoutes from './routes/geotech.js';
+import aiRoutes from './routes/ai.js';
+import dispatchRoutes from './routes/dispatch.js';
+import energyRoutes from './routes/energy.js';
+import waterRoutes from './routes/water.js';
+import weatherRoutes from './routes/weather.js';
+import visionRoutes from './routes/vision.js';
+import crisisRoutes, { setCrisisReferences } from './routes/crisis.js';
+import directorRoutes from './routes/director.js';
+import deviceRoutes, { setDeviceReferences } from './routes/devices.js';
 
 dotenv.config({ path: '.env' });
 
@@ -67,24 +80,36 @@ const RATE_LIMIT_WINDOW = 15 * 60 * 1000; // 15 min
 const MAX_LOGIN_ATTEMPTS = 5;
 
 const rateLimiter = (req, res, next) => {
-  if (req.path !== '/api/auth/login') return next();
-  
-  const ip = req.ip || req.connection.remoteAddress;
+  if (req.path !== '/api/auth/login' || req.method !== 'POST') return next();
+
+  const ip = req.ip || req.socket?.remoteAddress || req.connection?.remoteAddress || 'unknown';
   const now = Date.now();
-  const attempts = loginAttempts.get(ip) || { count: 0, startTime: now };
-  
-  if (now - attempts.startTime > RATE_LIMIT_WINDOW) {
-    attempts.count = 0;
-    attempts.startTime = now;
+  let attempts = loginAttempts.get(ip);
+
+  if (attempts && now - attempts.startTime > RATE_LIMIT_WINDOW) {
+    loginAttempts.delete(ip);
+    attempts = undefined;
   }
-  
-  attempts.count++;
-  loginAttempts.set(ip, attempts);
-  
-  if (attempts.count > MAX_LOGIN_ATTEMPTS) {
+
+  // Only block after too many failed attempts (not successful logins)
+  if (attempts && attempts.count >= MAX_LOGIN_ATTEMPTS) {
     return res.status(429).json({ error: 'Trop de tentatives. Réessayez dans 15 minutes.' });
   }
-  
+
+  res.on('finish', () => {
+    if (res.statusCode === 401 || res.statusCode === 400) {
+      const cur = loginAttempts.get(ip) || { count: 0, startTime: Date.now() };
+      if (Date.now() - cur.startTime > RATE_LIMIT_WINDOW) {
+        cur.count = 0;
+        cur.startTime = Date.now();
+      }
+      cur.count += 1;
+      loginAttempts.set(ip, cur);
+    } else if (res.statusCode >= 200 && res.statusCode < 300) {
+      loginAttempts.delete(ip);
+    }
+  });
+
   next();
 };
 
@@ -99,6 +124,26 @@ app.use('/api/lora', loraRoutes);
 app.use('/api/data', dataRoutes);
 app.use('/api/watch', watchRoutes);
 app.use('/api/gis', gisRoutes);
+app.use('/api/fleet', fleetRoutes);
+app.use('/api/maintenance', maintenanceRoutes);
+app.use('/api/esg', esgRoutes);
+app.use('/api/geotech', geotechRoutes);
+app.use('/api/ai', aiRoutes);
+app.use('/api/dispatch', dispatchRoutes);
+app.use('/api/energy', energyRoutes);
+app.use('/api/water', waterRoutes);
+app.use('/api/weather', weatherRoutes);
+app.use('/api/vision', visionRoutes);
+app.use('/api/crisis', crisisRoutes);
+app.use('/api/director', directorRoutes);
+app.use('/api/devices', (req, res, next) => {
+  const started = Date.now();
+  res.on('finish', () => {
+    console.log(`[devices] ${req.method} ${req.originalUrl} → ${res.statusCode} ${Date.now() - started}ms ip=${req.ip}`);
+  });
+  next();
+});
+app.use('/api/devices', deviceRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -118,6 +163,8 @@ const realTimeDataService = new RealTimeDataService(websocketManager);
 websocketManager.setRealTimeDataService(realTimeDataService);
 setDataReferences(websocketManager, realTimeDataService);
 setWatchReferences(realTimeDataService);
+setDeviceReferences(realTimeDataService, websocketManager);
+setCrisisReferences(realTimeDataService);
 
 // SerialPort utilise un callback au lieu de globals
 const serialPortManager = new SerialPortManager((data) => {
@@ -199,7 +246,7 @@ process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 // Start server
 const PORT = process.env.PORT || 5000;
-httpServer.listen(PORT, () => {
+httpServer.listen(PORT, '0.0.0.0', () => {
   console.log(`Serveur backend en cours d'exécution sur le port ${PORT}`);
   console.log('Serveur WebSocket prêt');
   

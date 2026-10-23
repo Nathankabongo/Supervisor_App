@@ -1,8 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { io } from 'socket.io-client';
-
-const host = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
-const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || `http://${host}:5000`;
+import { SOCKET_URL } from '../config/urls';
 
 export function useWebSocket() {
   const socketRef = useRef(null);

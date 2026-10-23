@@ -1,3 +1,4 @@
+import { gpsToLocalMap } from '../utils/gps.js';
 import { ackMessageInDb } from '../routes/data.js';
 
 let referenceLocation = null;
@@ -132,23 +133,7 @@ export class WebSocketManager {
           }
         });
 
-        // 4. (Désactivé) Ne pas envoyer d'alerte SOS en boucle via la télémétrie.
-        // L'alerte est déjà gérée par l'événement explicite 'sos-alert' lors du clic.
-        /*
-        if (data.sos) {
-          this.realTimeDataService.processLoRaData({
-            type: 'alert',
-            minerId: data.minerId,
-            minerName: data.minerName,
-            alertType: 'emergency',
-            severity: 'high',
-            message: 'Bouton SOS activé (télémétrie)',
-            zone: coords.zone,
-            heartRate: data.heartRate,
-            seismicHz: data.seismicHz
-          });
-        }
-        */
+        // 4. Pas d'alerte via la télémétrie périodique — uniquement via 'sos-alert' ou POST /api/watch/sos
       }
     });
 
@@ -156,19 +141,23 @@ export class WebSocketManager {
       console.log(`🚨 SOS button clicked on watch for miner: ${data.minerId}`);
       if (this.realTimeDataService) {
         const miner = this.realTimeDataService.miners.get(data.minerId);
-        const zone = miner ? miner.zone : 'ZONE A';
+        let zone = miner ? miner.zone : 'ZONE B';
+        if (data.lat && data.lng) {
+          zone = gpsToLocalMap(data.lat, data.lng).zone;
+        }
+        const isFall = data.type === 'FALL' || data.alertType === 'fall';
         
         // Broadcast Alert
         this.realTimeDataService.processLoRaData({
           type: 'alert',
           minerId: data.minerId,
           minerName: data.minerName,
-          alertType: 'emergency',
+          alertType: isFall ? 'fall' : 'emergency',
           severity: 'high',
-          message: 'Bouton SOS activé',
+          message: isFall ? 'Chute détectée' : 'Bouton SOS activé',
           zone: zone,
-          heartRate: data.heartRate || miner?.heartRate,
-          seismicHz: data.seismicHz || miner?.seismicHz
+          ...(data.heartRate != null ? { heartRate: data.heartRate } : {}),
+          ...(data.seismicHz != null ? { seismicHz: data.seismicHz } : {}),
         });
 
         // Update Status to danger
@@ -176,8 +165,8 @@ export class WebSocketManager {
           type: 'status',
           minerId: data.minerId,
           status: 'danger',
-          heartRate: data.heartRate || miner?.heartRate,
-          seismicHz: data.seismicHz || miner?.seismicHz
+          ...(data.heartRate != null ? { heartRate: data.heartRate } : {}),
+          ...(data.seismicHz != null ? { seismicHz: data.seismicHz } : {}),
         });
       }
     });

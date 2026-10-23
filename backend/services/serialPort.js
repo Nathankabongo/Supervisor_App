@@ -15,9 +15,22 @@ export class SerialPortManager {
   }
 
   async start() {
+    const path = (process.env.LORA_PORT || '').trim();
+    const disabled = !path || /^(none|off|disabled)$/i.test(path);
+    const windowsComOnLinux = process.platform !== 'win32' && /^COM\d+$/i.test(path);
+
+    if (disabled || windowsComOnLinux) {
+      console.log(
+        windowsComOnLinux
+          ? `LoRa USB ignoré (${path}) : chemin Windows, inutile ici. SOS montre = WiFi HTTP, pas COM3.`
+          : 'LoRa USB désactivé (LORA_PORT vide). SOS montre via POST /api/watch/sos.'
+      );
+      return;
+    }
+
     try {
       const portConfig = {
-        path: process.env.LORA_PORT || 'COM3',
+        path,
         baudRate: parseInt(process.env.BAUD_RATE) || 9600,
         dataBits: 8,
         stopBits: 1,

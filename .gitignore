@@ -32,3 +32,28 @@ pnpm-debug.log*
 
 # Temporary scripts
 push_to_github.ps1
+
+# SQLite runtime files
+backend/data/*.db-shm
+backend/data/*.db-wal
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Dependencies
+node_modules/
+
+# SQLite runtime files
+backend/data/*.db-shm
+backend/data/*.db-wal
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Dependencies
+node_modules/
+backend/data/*.db

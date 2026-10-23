@@ -1,5 +1,6 @@
 import express from 'express';
 import { getDb } from '../services/database.js';
+import { enqueueDeactivateSirenForZone, enqueueForAllDevices, pushSirenToEsp } from '../services/deviceCommandService.js';
 
 const router = express.Router();
 
@@ -64,6 +65,29 @@ function mapMiner(m) {
 function mapGateway(g) {
   return { ...g, lastHeartbeat: g.last_heartbeat };
 }
+function mapAlertRow(a) {
+  return {
+    id: a.id,
+    minerId: a.minerId ?? null,
+    minerName: a.minerName ?? null,
+    type: a.type,
+    severity: a.severity,
+    message: a.message,
+    zone: a.zone,
+    timestamp: a.timestamp,
+    createdAt: a.timestamp ? new Date(Number(a.timestamp)).toISOString() : null,
+    resolved: a.resolved === 1,
+    predictedCause: a.predictedCause,
+    source: a.source || 'LILYGO_INCIDENT',
+    deviceId: a.device_id || null,
+    sensorType: a.sensor_type || null,
+    sensorRaw: a.sensor_raw ?? null,
+    threshold: a.threshold ?? null,
+    siren: a.siren === 1,
+    clientEventId: a.client_event_id || null,
+    status: a.status || (a.resolved === 1 ? 'RESOLVED' : 'ACTIVE'),
+  };
+}
 
 // === MESSAGES ===
 
@@ -115,20 +139,72 @@ router.get('/messages/:id', (req, res) => {
 // === ALERTES ===
 router.get('/alerts', (req, res) => {
   const db = getDb();
-  const dbAlerts = db.prepare('SELECT * FROM alerts ORDER BY timestamp DESC').all();
-  const alerts = dbAlerts.map(a => ({
-    id: a.id, minerId: a.minerId, minerName: a.minerName, type: a.type,
-    severity: a.severity, message: a.message, zone: a.zone,
-    timestamp: a.timestamp, resolved: a.resolved === 1, predictedCause: a.predictedCause
-  }));
+  const { connectedOnly } = req.query;
+
+  let dbAlerts;
+  if (connectedOnly === 'true') {
+    dbAlerts = db.prepare(`
+      SELECT a.* FROM alerts a
+      LEFT JOIN miners m ON a.minerId = m.id
+      WHERE
+        a.minerId IS NULL
+        OR IFNULL(a.source, 'LILYGO_INCIDENT') != 'LILYGO_INCIDENT'
+        OR (m.watch_id IS NOT NULL AND m.watch_id != '')
+      ORDER BY a.timestamp DESC
+    `).all();
+  } else {
+    dbAlerts = db.prepare('SELECT a.* FROM alerts a ORDER BY a.timestamp DESC').all();
+  }
+
+  const alerts = dbAlerts.map((a) => mapAlertRow(a));
   res.json({ alerts });
+});
+
+router.delete('/alerts', (req, res) => {
+  const db = getDb();
+  db.prepare('DELETE FROM alerts').run();
+  if (realTimeDataService) {
+    realTimeDataService.clearAlerts();
+  }
+  enqueueForAllDevices(
+    'DEACTIVATE_SIREN',
+    `siren-off-cleared-${Date.now()}`,
+    'Alertes effacees',
+    { source: 'MANUAL' }
+  );
+  pushSirenToEsp(false, { id: 'cleared' });
+  res.json({ success: true, message: 'Toutes les alertes ont été supprimées' });
+});
+
+router.delete('/alerts/:id', (req, res) => {
+  const db = getDb();
+  const existing = db.prepare('SELECT * FROM alerts WHERE id=?').get(req.params.id);
+  db.prepare('DELETE FROM alerts WHERE id=?').run(req.params.id);
+  if (realTimeDataService) {
+    realTimeDataService.deleteAlert(req.params.id);
+  }
+  const stillSiren = db.prepare(`
+    SELECT 1 AS ok FROM alerts
+    WHERE COALESCE(resolved, 0) = 0
+      AND COALESCE(status, 'ACTIVE') = 'ACTIVE'
+      AND COALESCE(siren, 1) = 1
+    LIMIT 1
+  `).get();
+  if (existing && !stillSiren) {
+    enqueueDeactivateSirenForZone(existing.zone, req.params.id);
+  }
+  res.json({ success: true, message: 'Alerte supprimée' });
 });
 
 router.post('/alerts/:id/resolve', (req, res) => {
   const db = getDb();
-  db.prepare('UPDATE alerts SET resolved=1 WHERE id=?').run(req.params.id);
+  const existing = db.prepare('SELECT * FROM alerts WHERE id=?').get(req.params.id);
+  db.prepare("UPDATE alerts SET resolved=1, status='RESOLVED' WHERE id=?").run(req.params.id);
   if (realTimeDataService) {
     realTimeDataService.resolveAlert(req.params.id);
+  }
+  if (existing?.zone && (existing.siren === 1 || existing.source === 'GAS_SENSOR' || existing.source === 'LILYGO_INCIDENT')) {
+    enqueueDeactivateSirenForZone(existing.zone, req.params.id);
   }
   res.json({ success: true });
 });
@@ -629,6 +705,77 @@ router.get('/users', (req, res) => {
   const db = getDb();
   const users = db.prepare('SELECT id, username, name, role, created_at FROM users').all();
   res.json({ users });
+});
+
+router.post('/users', async (req, res) => {
+  try {
+    const { username, password, name, role } = req.body;
+    if (!username || !password || !name) {
+      return res.status(400).json({ error: 'Nom, identifiant et mot de passe requis' });
+    }
+    if (password.length < 6) {
+      return res.status(400).json({ error: 'Mot de passe min 6 caractères' });
+    }
+    const db = getDb();
+    const existing = db.prepare('SELECT id FROM users WHERE username = ?').get(username);
+    if (existing) return res.status(409).json({ error: 'Identifiant déjà utilisé' });
+
+    const bcrypt = (await import('bcryptjs')).default;
+    const hashed = await bcrypt.hash(password, 10);
+    const allowedRoles = ['supervisor', 'operator', 'technician', 'engineer', 'admin', 'Superviseur', 'Opérateur', 'Technicien', 'Ingénieur', 'Administrateur'];
+    const safeRole = allowedRoles.includes(role) ? role : 'supervisor';
+    const result = db.prepare('INSERT INTO users (username, password, name, role) VALUES (?, ?, ?, ?)').run(username, hashed, name, safeRole);
+    const user = db.prepare('SELECT id, username, name, role, created_at FROM users WHERE id = ?').get(result.lastInsertRowid);
+    res.status(201).json({ user });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.put('/users/:id', async (req, res) => {
+  try {
+    const db = getDb();
+    const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
+    if (!user) return res.status(404).json({ error: 'Utilisateur introuvable' });
+
+    const { name, role, password, username } = req.body;
+    const nextName = name ?? user.name;
+    const nextRole = role ?? user.role;
+    const nextUsername = username ?? user.username;
+
+    if (username && username !== user.username) {
+      const clash = db.prepare('SELECT id FROM users WHERE username = ? AND id != ?').get(username, req.params.id);
+      if (clash) return res.status(409).json({ error: 'Identifiant déjà utilisé' });
+    }
+
+    if (password) {
+      if (password.length < 6) return res.status(400).json({ error: 'Mot de passe min 6 caractères' });
+      const bcrypt = (await import('bcryptjs')).default;
+      const hashed = await bcrypt.hash(password, 10);
+      db.prepare('UPDATE users SET username = ?, name = ?, role = ?, password = ? WHERE id = ?')
+        .run(nextUsername, nextName, nextRole, hashed, req.params.id);
+    } else {
+      db.prepare('UPDATE users SET username = ?, name = ?, role = ? WHERE id = ?')
+        .run(nextUsername, nextName, nextRole, req.params.id);
+    }
+
+    const updated = db.prepare('SELECT id, username, name, role, created_at FROM users WHERE id = ?').get(req.params.id);
+    res.json({ user: updated });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.delete('/users/:id', (req, res) => {
+  try {
+    const db = getDb();
+    const user = db.prepare('SELECT id FROM users WHERE id = ?').get(req.params.id);
+    if (!user) return res.status(404).json({ error: 'Utilisateur introuvable' });
+    db.prepare('DELETE FROM users WHERE id = ?').run(req.params.id);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // Init trace data from DB (called at startup)

@@ -34,14 +34,21 @@ function App() {
 
   // Sync current page with URL
   useEffect(() => {
-    const path = location.pathname.replace('/', '') || 'dashboard';
-    setCurrentPage(path);
+    const path = location.pathname.replace(/^\//, '') || 'dashboard';
+    // Ignore query string; treat redirects as localisation
+    if (path === 'map' || path === 'trajectories' || path === 'traceability' || path === 'history') {
+      setCurrentPage('localisation');
+    } else {
+      setCurrentPage(path);
+    }
   }, [location.pathname]);
 
   const handlePageChange = (page: string) => {
     setCurrentPage(page);
     if (page === 'dashboard') {
       navigate('/');
+    } else if (page === 'localisation') {
+      navigate('/localisation?tab=carte');
     } else {
       navigate(`/${page}`);
     }
