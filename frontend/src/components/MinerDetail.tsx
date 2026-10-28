@@ -1,5 +1,5 @@
 import { Miner } from '../store/useStore';
-import { X, Heart, Activity, MapPin, Shield, Clock } from 'lucide-react';
+import { X, Heart, Activity, MapPin, Shield, Clock, Navigation } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 interface MinerDetailProps {
@@ -133,6 +133,37 @@ export default function MinerDetail({ miner, onClose }: MinerDetailProps) {
             </div>
           </div>
 
+          <div className="flex items-center gap-3">
+            <Activity size={20} className={miner.motion === 'still' ? 'text-amber-400' : 'text-emerald-400'} />
+            <div>
+              <p className="text-xs text-gray-400">Activité & Mouvement</p>
+              <div className="flex items-center gap-2 mt-0.5">
+                {miner.motion === 'still' ? (
+                  <span className="px-2 py-0.5 rounded text-xs font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1">
+                    ⏸️ Immobile (Détection montre)
+                  </span>
+                ) : miner.motion === 'walking' ? (
+                  <span className="px-2 py-0.5 rounded text-xs font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
+                    🚶 En marche
+                  </span>
+                ) : miner.motion === 'running' ? (
+                  <span className="px-2 py-0.5 rounded text-xs font-semibold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 flex items-center gap-1">
+                    🏃 En course
+                  </span>
+                ) : miner.motion === 'fall' ? (
+                  <span className="px-2 py-0.5 rounded text-xs font-semibold bg-red-500/20 text-red-300 border border-red-500/30 animate-pulse flex items-center gap-1">
+                    ⚠️ Chute détectée
+                  </span>
+                ) : (
+                  <span className="text-white text-sm font-medium">Standard</span>
+                )}
+                {miner.steps !== undefined && (
+                  <span className="text-xs text-gray-400 font-mono">({miner.steps} pas)</span>
+                )}
+              </div>
+            </div>
+          </div>
+
           {miner.phone && (
             <div className="flex items-center gap-3">
               <Activity size={20} className="text-gray-400" />
@@ -212,10 +243,23 @@ export default function MinerDetail({ miner, onClose }: MinerDetailProps) {
                 {new Date(miner.position.timestamp).toLocaleTimeString('fr-FR')}
               </span>
             </div>
+            <div className="flex items-start gap-2 text-sm">
+              <MapPin size={16} className="text-purple-400 mt-0.5 shrink-0" />
+              <div>
+                <span className="text-gray-400 block text-xs">Position GPS exacte:</span>
+                <span className="text-white font-mono font-medium text-xs">
+                  {miner.latitude != null && miner.longitude != null && (miner.latitude !== 0 || miner.longitude !== 0)
+                    ? `Lat: ${Number(miner.latitude).toFixed(6)} | Lng: ${Number(miner.longitude).toFixed(6)}`
+                    : miner.position?.lat != null && miner.position?.lng != null && (miner.position.lat !== 0 || miner.position.lng !== 0)
+                    ? `Lat: ${Number(miner.position.lat).toFixed(6)} | Lng: ${Number(miner.position.lng).toFixed(6)}`
+                    : 'En attente de signal GPS satellite'}
+                </span>
+              </div>
+            </div>
             <div className="flex items-center gap-2 text-sm">
-              <MapPin size={16} className="text-gray-400" />
-              <span className="text-gray-400">Position:</span>
-              <span className="text-white">
+              <Navigation size={16} className="text-blue-400 shrink-0" />
+              <span className="text-gray-400 text-xs">Coordonnées locales:</span>
+              <span className="text-gray-300 font-mono text-xs">
                 X: {Math.round(miner.position.x)}, Y: {Math.round(miner.position.y)}
               </span>
             </div>

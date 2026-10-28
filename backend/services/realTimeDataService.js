@@ -60,10 +60,14 @@ export class RealTimeDataService {
       dbMiners.forEach(m => {
         let trajectory = [];
         try {
-          const logs = db.prepare('SELECT x, y, created_at FROM gps_track_logs WHERE miner_id = ? ORDER BY created_at ASC LIMIT 100').all(m.id);
+          const logs = db.prepare('SELECT x, y, latitude, longitude, created_at FROM gps_track_logs WHERE miner_id = ? ORDER BY created_at ASC LIMIT 100').all(m.id);
           trajectory = logs.map(l => ({
             x: l.x,
             y: l.y,
+            lat: l.latitude,
+            lng: l.longitude,
+            latitude: l.latitude,
+            longitude: l.longitude,
             timestamp: new Date(l.created_at).getTime()
           }));
         } catch (err) {
@@ -87,9 +91,13 @@ export class RealTimeDataService {
           heartRate: m.heart_rate || 0,
           temperature: m.temperature,
           battery: m.battery,
+          latitude: m.latitude ?? null,
+          longitude: m.longitude ?? null,
+          motion: m.motion || 'still',
+          immobileSince: m.immobile_since ? new Date(m.immobile_since).getTime() : null,
           position: (m.x != null && m.y != null)
-            ? { x: m.x, y: m.y, timestamp: Date.now() }
-            : { x: 0, y: 0, timestamp: 0 },
+            ? { x: m.x, y: m.y, lat: m.latitude, lng: m.longitude, latitude: m.latitude, longitude: m.longitude, timestamp: Date.now() }
+            : { x: 0, y: 0, lat: null, lng: null, timestamp: 0 },
           // Trajectoire = logs GPS montre uniquement (pas de point inventé)
           trajectory: trajectory,
           is_in_service: m.is_in_service === 1,
@@ -255,23 +263,36 @@ export class RealTimeDataService {
   }
 
   updateMinerLocation(data) {
-    // Stocker les données complètes du mineur
     const existing = this.miners.get(data.minerId) || {};
     
-    // Si lat et lng sont fournis (par la Gateway LoRa ou HTTP), on écrase x, y et zone
-    let x = data.x;
-    let y = data.y;
-    let zone = data.zone;
+    // Extraction GPS réelle (priorité aux coordonnées de la montre)
+    const rawLat = data.lat !== undefined ? data.lat : (data.latitude !== undefined ? data.latitude : existing.latitude);
+    const rawLng = data.lng !== undefined ? data.lng : (data.longitude !== undefined ? data.longitude : existing.longitude);
+    const hasGps = rawLat !== null && rawLng !== null && !isNaN(Number(rawLat)) && !isNaN(Number(rawLng)) && (Number(rawLat) !== 0 || Number(rawLng) !== 0);
+    const lat = hasGps ? Number(rawLat) : (existing.latitude ?? null);
+    const lng = hasGps ? Number(rawLng) : (existing.longitude ?? null);
 
-    if (data.lat !== undefined && data.lng !== undefined) {
-      const mapData = gpsToLocalMap(data.lat, data.lng);
+    let x = data.x ?? existing.position?.x ?? 500;
+    let y = data.y ?? existing.position?.y ?? 250;
+    let zone = data.zone || existing.zone || 'ZONE B';
+
+    if (hasGps) {
+      const mapData = gpsToLocalMap(lat, lng);
       x = mapData.x;
       y = mapData.y;
       zone = mapData.zone;
     }
 
     const trajectory = existing.trajectory || [];
-    const newPos = { x: x, y: y, timestamp: Date.now() };
+    const newPos = { 
+      x: x, 
+      y: y, 
+      lat: lat, 
+      lng: lng, 
+      latitude: lat, 
+      longitude: lng, 
+      timestamp: Date.now() 
+    };
     const updatedTrajectory = [...trajectory, newPos].slice(-100);
 
     const minerData = {
@@ -281,12 +302,14 @@ export class RealTimeDataService {
       position: newPos,
       trajectory: updatedTrajectory,
       zone: zone,
+      latitude: lat,
+      longitude: lng,
       battery: data.battery !== undefined ? data.battery : existing.battery,
       rssi: data.rssi !== undefined ? data.rssi : existing.rssi,
       connectionType: data.connectionType || existing.connectionType,
       temperature: data.temperature !== undefined ? data.temperature : existing.temperature,
       steps: data.steps !== undefined ? data.steps : existing.steps,
-      motion: data.motion || existing.motion,
+      motion: data.motion || existing.motion || 'still',
       lastUpdate: Date.now()
     };
     this.miners.set(data.minerId, minerData);
@@ -294,22 +317,25 @@ export class RealTimeDataService {
     // Enregistrer l'historique GPS en base de données
     try {
       const db = getDb();
-      db.prepare('INSERT INTO gps_track_logs (miner_id, x, y, zone) VALUES (?, ?, ?, ?)')
-        .run(data.minerId, x, y, zone);
-      // Limiter à 100 points historiques par mineur
+      db.prepare('INSERT INTO gps_track_logs (miner_id, x, y, zone, latitude, longitude) VALUES (?, ?, ?, ?, ?, ?)')
+        .run(data.minerId, x, y, zone, lat, lng);
       db.prepare('DELETE FROM gps_track_logs WHERE id NOT IN (SELECT id FROM gps_track_logs WHERE miner_id = ? ORDER BY created_at DESC LIMIT 100) AND miner_id = ?')
         .run(data.minerId, data.minerId);
     } catch (e) {
       console.warn("Erreur sauvegarde historique GPS:", e);
     }
     
-    // Diffuser la mise à jour de localisation
+    // Diffuser la mise à jour de localisation avec coordonnées GPS réelles
     this.websocketManager.broadcastLocationUpdate({
       type: 'location-update',
       minerId: data.minerId,
       name: minerData.name,
       position: minerData.position,
       zone: minerData.zone,
+      latitude: minerData.latitude,
+      longitude: minerData.longitude,
+      lat: minerData.latitude,
+      lng: minerData.longitude,
       battery: minerData.battery,
       rssi: minerData.rssi,
       connectionType: minerData.connectionType,
@@ -566,6 +592,15 @@ export class RealTimeDataService {
       if (data.heartRate !== undefined) {
         miner.heartRate = data.heartRate;
       }
+      if (data.motion !== undefined) {
+        miner.motion = data.motion;
+      }
+      if (data.temperature !== undefined) {
+        miner.temperature = data.temperature;
+      }
+      if (data.steps !== undefined) {
+        miner.steps = data.steps;
+      }
       if (data.toxicGasLevel !== undefined) {
         miner.toxicGasLevel = data.toxicGasLevel;
       }
@@ -581,6 +616,9 @@ export class RealTimeDataService {
         minerId: data.minerId,
         status: data.status,
         heartRate: data.heartRate,
+        motion: data.motion,
+        temperature: data.temperature,
+        steps: data.steps,
         toxicGasLevel: data.toxicGasLevel,
         seismicHz: data.seismicHz,
         connectionType: data.connectionType

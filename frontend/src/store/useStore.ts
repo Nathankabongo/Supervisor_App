@@ -6,6 +6,10 @@ export type AlertType = 'fall' | 'immobility' | 'gas' | 'emergency';
 export interface Position {
   x: number;
   y: number;
+  lat?: number | null;
+  lng?: number | null;
+  latitude?: number | null;
+  longitude?: number | null;
   timestamp: number;
 }
 
@@ -37,6 +41,11 @@ export interface Miner {
   temperature?: number;
   steps?: number;
   motion?: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  lat?: number | null;
+  lng?: number | null;
+  immobileSince?: number | null;
 }
 
 export interface Alert {

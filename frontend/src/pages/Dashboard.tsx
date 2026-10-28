@@ -956,11 +956,16 @@ export default function Dashboard() {
                     <p className="text-white font-medium">{selectedMiner.role}</p>
                   </div>
                   <div className="bg-[#1e293b] p-2 rounded border border-gray-700">
-                    <p className="text-gray-400 flex items-center gap-1">
-                      <Navigation size={10} className="text-purple-400" /> Position GPS 2D
+                    <p className="text-gray-400 flex items-center justify-between">
+                      <span className="flex items-center gap-1"><Navigation size={10} className="text-purple-400" /> Position GPS</span>
+                      <span className="text-[9px] text-slate-500 font-mono">X:{selectedMiner.position.x.toFixed(0)} Y:{selectedMiner.position.y.toFixed(0)}</span>
                     </p>
-                    <p className="text-white font-mono font-medium truncate">
-                      X: {selectedMiner.position.x.toFixed(1)}, Y: {selectedMiner.position.y.toFixed(1)}
+                    <p className="text-white font-mono font-medium text-[11px] truncate mt-0.5">
+                      {selectedMiner.latitude != null && selectedMiner.longitude != null && (selectedMiner.latitude !== 0 || selectedMiner.longitude !== 0)
+                        ? `${Number(selectedMiner.latitude).toFixed(5)}, ${Number(selectedMiner.longitude).toFixed(5)}`
+                        : selectedMiner.position?.lat != null && selectedMiner.position?.lng != null && (selectedMiner.position.lat !== 0 || selectedMiner.position.lng !== 0)
+                        ? `${Number(selectedMiner.position.lat).toFixed(5)}, ${Number(selectedMiner.position.lng).toFixed(5)}`
+                        : `X:${selectedMiner.position.x.toFixed(0)} Y:${selectedMiner.position.y.toFixed(0)}`}
                     </p>
                   </div>
                   <div className="bg-[#1e293b] p-2 rounded border border-gray-700">

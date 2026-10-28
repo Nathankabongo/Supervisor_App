@@ -693,8 +693,8 @@ export default function TrajectoriesPanel() {
                                   : 'bg-gray-500'
                           }`}
                         />
-                        <span className="text-[10px] flex-1 font-mono">
-                          Point {i + 1} ({Math.round(point.x)}m, {Math.round(point.y)}m)
+                        <span className="text-[10px] flex-1 font-mono truncate">
+                          Point {i + 1} : {point.lat != null && point.lng != null && (point.lat !== 0 || point.lng !== 0) ? `${Number(point.lat).toFixed(5)}, ${Number(point.lng).toFixed(5)}` : `(${Math.round(point.x)}m, ${Math.round(point.y)}m)`}
                         </span>
                         <span className="text-[9px] text-gray-500">
                           {new Date(point.timestamp).toLocaleTimeString('fr-FR', {

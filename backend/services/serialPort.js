@@ -100,18 +100,115 @@ export class SerialPortManager {
   }
 
   parseLoRaMessage(message) {
-    try {
-      const parsed = JSON.parse(message);
-      // Validation minimale du format
-      if (!parsed.type || !parsed.minerId) {
-        console.warn('Message LoRa invalide (type ou minerId manquant):', message);
-        return null;
-      }
-      return parsed;
-    } catch (error) {
-      console.warn('Échec du parsing JSON:', message);
-      return null;
+    if (!message || typeof message !== 'string') return null;
+    const trimmed = message.trim();
+
+    // 1. Essayer le format JSON standard
+    if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (parsed.type && (parsed.minerId || parsed.workerId)) {
+          return parsed;
+        }
+      } catch (e) {}
     }
+
+    // 2. Format trame texte pipe-separated (comme généré par lora_service.cpp)
+    // Types : SOS|M001|battery|lat|lng
+    //         FALL|M001|battery|lat|lng
+    //         IMMOBILITY|M001|battery|lat|lng
+    //         HB|M001|battery
+    //         DATA|M001|battery|lat|lng|motion|steps|temp
+    const parts = trimmed.split('|');
+    if (parts.length >= 2) {
+      const msgType = parts[0].toUpperCase();
+      const workerId = parts[1].trim();
+
+      if (msgType === 'SOS') {
+        const battery = parts[2] ? parseFloat(parts[2]) : 100;
+        const lat = parts[3] ? parseFloat(parts[3]) : null;
+        const lng = parts[4] ? parseFloat(parts[4]) : null;
+        return {
+          type: 'alert',
+          alertType: 'emergency',
+          minerId: workerId,
+          battery,
+          lat,
+          lng,
+          latitude: lat,
+          longitude: lng,
+          message: 'Bouton SOS activé (LoRa)',
+          connectionType: 'lora'
+        };
+      }
+
+      if (msgType === 'FALL') {
+        const battery = parts[2] ? parseFloat(parts[2]) : 100;
+        const lat = parts[3] ? parseFloat(parts[3]) : null;
+        const lng = parts[4] ? parseFloat(parts[4]) : null;
+        return {
+          type: 'alert',
+          alertType: 'fall',
+          minerId: workerId,
+          battery,
+          lat,
+          lng,
+          latitude: lat,
+          longitude: lng,
+          message: 'Chute détectée (LoRa)',
+          connectionType: 'lora'
+        };
+      }
+
+      if (msgType === 'IMMOBILITY' || msgType === 'STILL') {
+        const battery = parts[2] ? parseFloat(parts[2]) : 100;
+        const lat = parts[3] ? parseFloat(parts[3]) : null;
+        const lng = parts[4] ? parseFloat(parts[4]) : null;
+        return {
+          type: 'alert',
+          alertType: 'immobility',
+          minerId: workerId,
+          battery,
+          lat,
+          lng,
+          latitude: lat,
+          longitude: lng,
+          message: 'Immobilité prolongée détectée (LoRa)',
+          connectionType: 'lora'
+        };
+      }
+
+      if (msgType === 'HB') {
+        const battery = parts[2] ? parseFloat(parts[2]) : 100;
+        return {
+          type: 'location',
+          minerId: workerId,
+          battery,
+          connectionType: 'lora'
+        };
+      }
+
+      if (msgType === 'DATA') {
+        const battery = parts[2] ? parseFloat(parts[2]) : 100;
+        const lat = parts[3] ? parseFloat(parts[3]) : null;
+        const lng = parts[4] ? parseFloat(parts[4]) : null;
+        const motion = parts[5] || 'still';
+        return {
+          type: 'location',
+          minerId: workerId,
+          battery,
+          lat,
+          lng,
+          latitude: lat,
+          longitude: lng,
+          motion,
+          connectionType: 'lora'
+        };
+      }
+    }
+
+    console.warn('Message LoRa non reconnu:', trimmed);
+    return null;
   }
 
   scheduleReconnect() {

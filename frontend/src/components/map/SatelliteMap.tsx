@@ -145,27 +145,29 @@ export default function SatelliteMap({ miners, selectedMiner, onMinerClick }: Sa
     markersGroupRef.current.clearLayers();
 
     miners.forEach((miner) => {
-      // Determine GPS position
+      // Priorité absolue aux coordonnées GPS réelles transmises par la montre
       let lat = 0;
       let lng = 0;
 
-      // Validate position data before conversion
-      const posX = miner.position?.x ?? 500;
-      const posY = miner.position?.y ?? 250;
+      const hasDirectGps = miner.latitude != null && miner.longitude != null && !isNaN(Number(miner.latitude)) && !isNaN(Number(miner.longitude)) && (Number(miner.latitude) !== 0 || Number(miner.longitude) !== 0);
+      const hasPosGps = miner.position?.lat != null && miner.position?.lng != null && !isNaN(Number(miner.position.lat)) && !isNaN(Number(miner.position.lng)) && (Number(miner.position.lat) !== 0 || Number(miner.position.lng) !== 0);
 
-      // Skip if position is invalid
-      if (isNaN(posX) || isNaN(posY) || posX === null || posY === null) {
-        console.warn(`Invalid position for miner ${miner.name}: x=${posX}, y=${posY}`);
-        return;
+      if (hasDirectGps) {
+        lat = Number(miner.latitude);
+        lng = Number(miner.longitude);
+      } else if (hasPosGps) {
+        lat = Number(miner.position!.lat);
+        lng = Number(miner.position!.lng);
+      } else {
+        const posX = miner.position?.x ?? 500;
+        const posY = miner.position?.y ?? 250;
+        if (isNaN(posX) || isNaN(posY) || posX === null || posY === null) return;
+        const fallback = localToGps(posX, posY);
+        lat = fallback.lat;
+        lng = fallback.lng;
       }
 
-      const fallback = localToGps(posX, posY);
-      lat = fallback.lat;
-      lng = fallback.lng;
-
-      // Validate converted coordinates
       if (isNaN(lat) || isNaN(lng) || lat === null || lng === null) {
-        console.warn(`Invalid GPS coordinates for miner ${miner.name}: lat=${lat}, lng=${lng}`);
         return;
       }
 
@@ -197,7 +199,8 @@ export default function SatelliteMap({ miners, selectedMiner, onMinerClick }: Sa
         iconAnchor: [15, 15]
       });
 
-      const marker = L.marker([lat, lng], { icon: customIcon });
+      const marker = L.marker([lat, lng], { icon: customIcon });
+      marker.on('click', () => onMinerClick(miner));
 
       // Popup content
       const popupContent = `
@@ -208,6 +211,8 @@ export default function SatelliteMap({ miners, selectedMiner, onMinerClick }: Sa
           <p style="margin: 2px 0;"><strong>Matricule:</strong> ${miner.matricule}</p>
           <p style="margin: 2px 0;"><strong>Zone:</strong> ${miner.currentZone}</p>
           <p style="margin: 2px 0;"><strong>Rôle:</strong> ${miner.role}</p>
+          <p style="margin: 2px 0; font-family: monospace; color: #a78bfa;"><strong>GPS:</strong> ${lat.toFixed(6)}, ${lng.toFixed(6)}</p>
+          <p style="margin: 2px 0;"><strong>Mouvement:</strong> ${miner.motion === 'still' ? '⏸️ Immobile' : miner.motion === 'walking' ? '🚶 En marche' : miner.motion === 'running' ? '🏃 Course' : miner.motion === 'fall' ? '⚠️ Chute' : 'Actif'}</p>
           <p style="margin: 2px 0; display: flex; align-items: center; gap: 4px;">
             <strong>Santé:</strong>
             <span style="color: ${miner.status === 'danger' ? '#f87171' : '#4ade80'}">

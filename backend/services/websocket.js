@@ -5,33 +5,9 @@ let referenceLocation = null;
 
 function mapGpsToMapCoords(location) {
   if (!location || typeof location.lat !== 'number' || typeof location.lng !== 'number') {
-    return { x: 500, y: 250, zone: 'ZONE B' };
+    return { x: 500, y: 250, zone: 'ZONE B', validGps: false };
   }
-  
-  if (!referenceLocation) {
-    referenceLocation = { lat: location.lat, lng: location.lng };
-  }
-  
-  const earthRadius = 6371000; // meters
-  const refLatRad = (referenceLocation.lat * Math.PI) / 180;
-  
-  const dy = (location.lat - referenceLocation.lat) * (Math.PI / 180) * earthRadius;
-  const dx = (location.lng - referenceLocation.lng) * (Math.PI / 180) * earthRadius * Math.cos(refLatRad);
-  
-  // Scale factor: 1 meter = 2.0 SVG units. Center of map is (500, 250)
-  const scale = 2.0; 
-  
-  let x = 500 + dx * scale;
-  let y = 250 - dy * scale; // Invert y for SVG coordinate system
-  
-  // Clamp to map boundaries
-  x = Math.max(20, Math.min(980, x));
-  y = Math.max(20, Math.min(480, y));
-  
-  // Determine zone based on x, y coordinates
-  const zone = getZoneForCoords(x, y);
-  
-  return { x, y, zone };
+  return gpsToLocalMap(location.lat, location.lng);
 }
 
 function getZoneForCoords(x, y) {
@@ -103,6 +79,11 @@ export class WebSocketManager {
           name: data.minerName,
           x: coords.x,
           y: coords.y,
+          lat: data.location?.lat,
+          lng: data.location?.lng,
+          latitude: data.location?.lat,
+          longitude: data.location?.lng,
+          motion: data.motion || (data.immobile ? 'still' : 'walking'),
           zone: coords.zone,
           battery: data.battery,
           rssi: -50,
@@ -145,6 +126,7 @@ export class WebSocketManager {
         if (data.lat && data.lng) {
           zone = gpsToLocalMap(data.lat, data.lng).zone;
         }
+        const isImmobility = data.type === 'IMMOBILITY' || data.alertType === 'immobility' || data.type === 'STILL';
         const isFall = data.type === 'FALL' || data.alertType === 'fall';
         
         // Broadcast Alert
@@ -152,9 +134,9 @@ export class WebSocketManager {
           type: 'alert',
           minerId: data.minerId,
           minerName: data.minerName,
-          alertType: isFall ? 'fall' : 'emergency',
+          alertType: isImmobility ? 'immobility' : (isFall ? 'fall' : 'emergency'),
           severity: 'high',
-          message: isFall ? 'Chute détectée' : 'Bouton SOS activé',
+          message: isImmobility ? 'Immobilité prolongée détectée' : (isFall ? 'Chute détectée' : 'Bouton SOS activé'),
           zone: zone,
           ...(data.heartRate != null ? { heartRate: data.heartRate } : {}),
           ...(data.seismicHz != null ? { seismicHz: data.seismicHz } : {}),

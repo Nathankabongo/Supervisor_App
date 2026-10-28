@@ -39,33 +39,59 @@ export function isPointInPolygon(lat, lng, polygon) {
 }
 
 // Convertit les coordonnées GPS réelles (lat, lng) en coordonnées locales SVG (1000x500)
-export function gpsToLocalMap(lat, lng) {
-  // Fallback si coordonnées invalides ou nulles
-  if (!lat || !lng || (lat === 0 && lng === 0)) {
-    return { x: 500, y: 250, zone: 'ZONE B' };
+export function gpsToLocalMap(rawLat, rawLng) {
+  const lat = Number(rawLat);
+  const lng = Number(rawLng);
+
+  // Fallback si coordonnées invalides, nulles ou 0,0 (perte fix GPS)
+  if (!rawLat || !rawLng || isNaN(lat) || isNaN(lng) || (lat === 0 && lng === 0)) {
+    return { x: 500, y: 250, zone: 'ZONE B', validGps: false, lat: 0, lng: 0 };
   }
 
   const config = getCachedGisConfig();
-  const site = config ? config.site : {
-    minLng: 27.4700,
-    maxLng: 27.4900,
-    minLat: -11.6500,
-    maxLat: -11.6400
-  };
+  let site = config?.site;
 
-  const minLngVal = site.minLng;
-  const maxLngVal = site.maxLng;
-  const minLatVal = site.minLat;
-  const maxLatVal = site.maxLat;
+  // Si pas de site configuré, utiliser un cadre centré sur le point
+  if (!site || !site.minLat || !site.maxLat || !site.minLng || !site.maxLng) {
+    site = {
+      minLng: lng - 0.01,
+      maxLng: lng + 0.01,
+      minLat: lat - 0.005,
+      maxLat: lat + 0.005
+    };
+  }
+
+  // Détection si les coordonnées GPS réelles sont très éloignées (> 15 km) du site configuré
+  const siteCenterLat = (site.minLat + site.maxLat) / 2;
+  const siteCenterLng = (site.minLng + site.maxLng) / 2;
+  const isFar = Math.abs(lat - siteCenterLat) > 0.15 || Math.abs(lng - siteCenterLng) > 0.15;
+
+  let minLngVal = site.minLng;
+  let maxLngVal = site.maxLng;
+  let minLatVal = site.minLat;
+  let maxLatVal = site.maxLat;
+
+  if (isFar) {
+    // Adapter dynamiquement le viewport local autour de la position GPS réelle de la montre
+    const deltaLat = 0.005; // ~550m
+    const deltaLng = 0.010; // ~1.1km
+    minLatVal = lat - deltaLat;
+    maxLatVal = lat + deltaLat;
+    minLngVal = lng - deltaLng;
+    maxLngVal = lng + deltaLng;
+  }
 
   // Projection linéaire sur l'espace 1000x500 de la carte SVG
-  let x = ((lng - minLngVal) / (maxLngVal - minLngVal)) * 1000;
-  // Latitude inversée (nord en haut de la carte, SVG y = 0)
-  let y = ((maxLatVal - lat) / (maxLatVal - minLatVal)) * 500;
+  const lngSpan = (maxLngVal - minLngVal) || 0.001;
+  const latSpan = (maxLatVal - minLatVal) || 0.001;
 
-  // Clamping pour rester dans les bornes SVG
-  x = Math.max(10, Math.min(990, x));
-  y = Math.max(10, Math.min(490, y));
+  let x = ((lng - minLngVal) / lngSpan) * 1000;
+  // Latitude inversée (nord en haut de la carte, SVG y = 0)
+  let y = ((maxLatVal - lat) / latSpan) * 500;
+
+  // Clamping pour rester dans les bornes SVG avec marge visuelle
+  x = Math.max(20, Math.min(980, x));
+  y = Math.max(20, Math.min(480, y));
 
   // Déterminer la zone réelle par appartenance au polygone
   let matchedZone = 'ZONE B'; // Par défaut
@@ -77,7 +103,25 @@ export function gpsToLocalMap(lat, lng) {
         break;
       }
     }
+  } else {
+    // Si pas de polygones configurés, découpage par quadrant de carte
+    if (y < 250) {
+      if (x < 333) matchedZone = 'ZONE A';
+      else if (x < 666) matchedZone = 'ZONE B';
+      else matchedZone = 'ZONE C';
+    } else {
+      if (x < 333) matchedZone = 'ZONE D';
+      else if (x < 666) matchedZone = 'ZONE E';
+      else matchedZone = 'ZONE F';
+    }
   }
 
-  return { x, y, zone: matchedZone };
+  return { 
+    x: Math.round(x * 10) / 10, 
+    y: Math.round(y * 10) / 10, 
+    zone: matchedZone, 
+    validGps: true, 
+    lat, 
+    lng 
+  };
 }

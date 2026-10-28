@@ -19,7 +19,8 @@ export default function Alerts() {
     useStore();
   const navigate = useNavigate();
 
-  const locateMiner = (minerId: string, alertType: string, resolved: boolean) => {
+  const locateMiner = (minerId: string | null | undefined, alertType: string, resolved: boolean) => {
+    if (!minerId) return;
     const miner = miners.find((m) => m.id === minerId);
     if (!miner) return;
     setSelectedMiner(miner);
@@ -77,7 +78,7 @@ export default function Alerts() {
   const filteredAlerts = alerts.filter((a) => {
     if (connectedOnly) {
       // Filter out alerts if the miner does not have an assigned watch
-      const hasWatch = minersWithWatch.has(a.minerId) || miners.length === 0;
+      const hasWatch = (a.minerId ? minersWithWatch.has(a.minerId) : false) || miners.length === 0;
       if (!hasWatch) return false;
     }
     if (filterStatus === 'unresolved') return !a.resolved;

@@ -46,6 +46,9 @@ function mapMiner(m) {
   if (!m) return null;
   return { 
     ...m, 
+    latitude: m.latitude ?? null,
+    longitude: m.longitude ?? null,
+    motion: m.motion || 'still',
     heartRate: m.heart_rate, 
     currentZone: m.zone, 
     currentGallery: m.gallery, 

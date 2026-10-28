@@ -29,17 +29,30 @@ export function useRealtimeConnection() {
             const hasRealPos =
               (m.position && m.position.x != null && m.position.y != null) ||
               (m.x != null && m.y != null);
+            const latVal = m.latitude ?? m.lat ?? m.position?.lat ?? null;
+            const lngVal = m.longitude ?? m.lng ?? m.position?.lng ?? null;
             const position = m.position
-              ? m.position
+              ? {
+                  ...m.position,
+                  lat: m.position.lat ?? latVal,
+                  lng: m.position.lng ?? lngVal,
+                  latitude: m.position.latitude ?? latVal,
+                  longitude: m.position.longitude ?? lngVal,
+                }
               : hasRealPos
-                ? { x: m.x, y: m.y, timestamp: Date.now() }
-                : { x: 0, y: 0, timestamp: 0 };
+                ? { x: m.x, y: m.y, lat: latVal, lng: lngVal, latitude: latVal, longitude: lngVal, timestamp: Date.now() }
+                : { x: 0, y: 0, lat: null, lng: null, timestamp: 0 };
 
             return {
               ...m,
               currentZone: m.zone || m.currentZone || '',
               currentGallery: m.gallery || m.currentGallery || '',
               position,
+              latitude: latVal,
+              longitude: lngVal,
+              lat: latVal,
+              lng: lngVal,
+              motion: m.motion || 'still',
               // Trajectoire = logs GPS montre uniquement — pas de point inventé
               trajectory: hasGpsLogs ? m.trajectory : [],
               activityLevel: m.activityLevel ?? 0,
@@ -92,7 +105,20 @@ export function useRealtimeConnection() {
       const existing = currentMiners.find((m) => m.id === data.minerId);
       if (data.x == null && data.y == null && !data.position) return;
 
-      const position = data.position || { x: data.x, y: data.y, timestamp: Date.now() };
+      const rawLat = data.latitude !== undefined ? data.latitude : (data.lat !== undefined ? data.lat : (data.position?.lat ?? existing?.latitude));
+      const rawLng = data.longitude !== undefined ? data.longitude : (data.lng !== undefined ? data.lng : (data.position?.lng ?? existing?.longitude));
+      const latVal = (rawLat !== null && rawLat !== undefined && !isNaN(Number(rawLat)) && Number(rawLat) !== 0) ? Number(rawLat) : null;
+      const lngVal = (rawLng !== null && rawLng !== undefined && !isNaN(Number(rawLng)) && Number(rawLng) !== 0) ? Number(rawLng) : null;
+
+      const position = {
+        x: data.position?.x ?? data.x,
+        y: data.position?.y ?? data.y,
+        lat: latVal,
+        lng: lngVal,
+        latitude: latVal,
+        longitude: lngVal,
+        timestamp: data.position?.timestamp || Date.now()
+      };
 
       const minerData = {
         id: data.minerId,
@@ -103,6 +129,10 @@ export function useRealtimeConnection() {
         currentZone: data.zone || existing?.currentZone || '',
         currentGallery: existing?.currentGallery || '',
         position: position,
+        latitude: latVal,
+        longitude: lngVal,
+        lat: latVal,
+        lng: lngVal,
         trajectory: existing
           ? [...(existing.trajectory || []).slice(-99), position]
           : [position],
@@ -119,7 +149,7 @@ export function useRealtimeConnection() {
           data.is_underground !== undefined ? data.is_underground : existing?.isUnderground,
         temperature: data.temperature !== undefined ? data.temperature : existing?.temperature,
         steps: data.steps !== undefined ? data.steps : existing?.steps,
-        motion: data.motion !== undefined ? data.motion : existing?.motion,
+        motion: data.motion !== undefined ? data.motion : (existing?.motion || 'still'),
       };
 
       if (!existing) {
@@ -137,6 +167,9 @@ export function useRealtimeConnection() {
         updateMiner(data.minerId, {
           status: data.status,
           heartRate: data.heartRate || existing.heartRate,
+          motion: data.motion || existing.motion,
+          temperature: data.temperature !== undefined ? data.temperature : existing.temperature,
+          steps: data.steps !== undefined ? data.steps : existing.steps,
         });
       }
     });

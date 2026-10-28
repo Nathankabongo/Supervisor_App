@@ -108,6 +108,12 @@ function migrateZoneAlarm() {
   addColumnIfMissing('devices', 'last_command_status', 'last_command_status TEXT');
   addColumnIfMissing('devices', 'last_ip', 'last_ip TEXT');
   addColumnIfMissing('devices', 'listen_port', 'listen_port INTEGER');
+  addColumnIfMissing('miners', 'latitude', 'latitude REAL');
+  addColumnIfMissing('miners', 'longitude', 'longitude REAL');
+  addColumnIfMissing('miners', 'motion', 'motion TEXT DEFAULT \'still\'');
+  addColumnIfMissing('miners', 'immobile_since', 'immobile_since TEXT');
+  addColumnIfMissing('gps_track_logs', 'latitude', 'latitude REAL');
+  addColumnIfMissing('gps_track_logs', 'longitude', 'longitude REAL');
 }
 
 function initSchema() {
