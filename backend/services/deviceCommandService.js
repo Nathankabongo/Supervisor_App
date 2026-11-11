@@ -56,18 +56,65 @@ export function listDevices() {
 
 export function mapDevicePublic(row) {
   const status = computeDeviceStatus(row.last_seen);
+  let telemetry = null;
+  if (row.telemetry_json) {
+    try {
+      telemetry = JSON.parse(row.telemetry_json);
+    } catch {
+      telemetry = null;
+    }
+  }
+  const gasRaw = row.gas_raw ?? telemetry?.gas?.raw ?? telemetry?.air?.raw ?? null;
+  const gasBaseline = row.gas_baseline ?? telemetry?.gas?.baseline ?? null;
+  const gasThreshold = row.gas_threshold ?? telemetry?.gas?.threshold ?? telemetry?.air?.threshold ?? null;
+  const gasPhase = row.gas_phase ?? telemetry?.gas?.phase ?? null;
+  const gasAlarm = row.gas_alarm === 1 || telemetry?.gas?.alarm === true || telemetry?.air?.alarm === true;
+  const gasFault = row.gas_fault === 1 || telemetry?.gas?.fault === true;
+
+  const vibRms = row.vib_rms ?? telemetry?.vibration?.rms ?? null;
+  const vibThreshold = row.vib_threshold ?? telemetry?.vibration?.threshold ?? null;
+  const vibAlarm = row.vib_alarm === 1 || telemetry?.vibration?.alarm === true;
+  const mpuOk = row.mpu_ok !== 0 && telemetry?.vibration?.mpuOk !== false;
+
   return {
     id: row.id,
+    name: row.name || telemetry?.name || row.id,
     zone: row.zone,
     gallery: row.gallery,
+    deviceType: row.device_type || telemetry?.deviceType || 'ULINZI_BOX',
     status,
     lastSeen: row.last_seen,
+    lastIp: row.last_ip || null,
     siren: row.siren === 1,
+    danger: row.danger === 1 || telemetry?.danger === true,
+    alarmLatched: row.alarm_latched === 1 || telemetry?.alarmLatched === true,
     alarmSource: row.alarm_source,
     activeAlertId: row.active_alert_id,
     lastCommandId: row.last_command_id || null,
     lastCommandStatus: row.last_command_status || null,
     revoked: row.revoked === 1,
+    gas: {
+      raw: gasRaw,
+      baseline: gasBaseline,
+      threshold: gasThreshold,
+      phase: gasPhase,
+      warmupRemainingS: telemetry?.gas?.warmupRemainingS ?? null,
+      alarm: gasAlarm,
+      fault: gasFault,
+    },
+    vibration: {
+      rms: vibRms,
+      threshold: vibThreshold,
+      alarm: vibAlarm,
+      mpuOk,
+      ax: telemetry?.vibration?.ax ?? null,
+      ay: telemetry?.vibration?.ay ?? null,
+      az: telemetry?.vibration?.az ?? null,
+      gx: telemetry?.vibration?.gx ?? null,
+      gy: telemetry?.vibration?.gy ?? null,
+      gz: telemetry?.vibration?.gz ?? null,
+    },
+    uptimeMs: telemetry?.uptimeMs ?? null,
   };
 }
 
@@ -104,8 +151,8 @@ export function pushSirenToEsp(on, alert = {}) {
       continue;
     }
     const port = Number(d.listen_port) > 0 ? Number(d.listen_port) : 8080;
-        const alertId = encodeURIComponent(alert.id || alert.alertId || '');
-        const path = on ? `/siren/on?alertId=${alertId}` : '/siren/off';
+    const alertId = encodeURIComponent(alert.id || alert.alertId || '');
+    const path = on ? `/siren/on?alertId=${alertId}` : '/siren/off';
     const body = JSON.stringify({
       action: on ? 'ACTIVATE_SIREN' : 'DEACTIVATE_SIREN',
       alertId: alert.id || alert.alertId || null,
@@ -250,11 +297,11 @@ export function consumePendingCommands(deviceId, autoAck = true) {
         if (tooOld) {
           const stillActive = row.alertId
             ? db.prepare(
-                `SELECT 1 AS ok FROM alerts
+              `SELECT 1 AS ok FROM alerts
                  WHERE id = ?
                    AND COALESCE(resolved, 0) = 0
                    AND COALESCE(status, 'ACTIVE') = 'ACTIVE'`
-              ).get(row.alertId)
+            ).get(row.alertId)
             : null;
           if (!stillActive) {
             expire.run(row.id);
@@ -327,16 +374,16 @@ export function getSirenSyncState(device) {
     siren: desiredSiren,
     alert: alert
       ? {
-          alertId: alert.id,
-          id: alert.id,
-          minerId: alert.minerId,
-          minerName: alert.minerName,
-          type: alert.type,
-          message: alert.message,
-          zone: alert.zone,
-          source: alert.source,
-          createdAt,
-        }
+        alertId: alert.id,
+        id: alert.id,
+        minerId: alert.minerId,
+        minerName: alert.minerName,
+        type: alert.type,
+        message: alert.message,
+        zone: alert.zone,
+        source: alert.source,
+        createdAt,
+      }
       : null,
   };
 }
@@ -442,16 +489,82 @@ export function touchDevice(deviceId, { siren, alarmSource, activeAlertId, lastI
 
 export function upsertEnvFromTelemetry(device, body) {
   const db = getDb();
-  const zone = device.zone;
+  const zone = (body.zone && String(body.zone).trim()) || device.zone;
+  const gallery = (body.gallery && String(body.gallery).trim()) || device.gallery;
+  const name = (body.name && String(body.name).trim()) || device.name || device.id;
+  const deviceType = (body.deviceType && String(body.deviceType).trim()) || device.device_type || 'ULINZI_BOX';
   const siren = body.siren ? 1 : 0;
+
+  const gas = body.gas || body.air || null;
+  const vib = body.vibration || null;
+
+  const gasRaw = gas?.raw ?? null;
+  const gasBaseline = gas?.baseline ?? null;
+  const gasThreshold = gas?.threshold ?? null;
+  const gasPhase = gas?.phase ?? null;
+  const gasAlarm = gas?.alarm ? 1 : 0;
+  const gasFault = gas?.fault ? 1 : 0;
+
+  const vibRms = vib?.rms ?? null;
+  const vibThreshold = vib?.threshold ?? null;
+  const vibAlarm = vib?.alarm ? 1 : 0;
+  const mpuOk = vib?.mpuOk === false ? 0 : 1;
+
+  const danger = (body.danger || gasAlarm || vibAlarm) ? 1 : 0;
+  const alarmLatched = body.alarmLatched ? 1 : 0;
+  const telemetryJson = JSON.stringify(body);
+
+  db.prepare(`
+    UPDATE devices
+    SET name = COALESCE(?, name),
+        zone = COALESCE(NULLIF(?, ''), zone),
+        gallery = COALESCE(NULLIF(?, ''), gallery),
+        device_type = COALESCE(NULLIF(?, ''), device_type),
+        gas_raw = COALESCE(?, gas_raw),
+        gas_baseline = COALESCE(?, gas_baseline),
+        gas_threshold = COALESCE(?, gas_threshold),
+        gas_phase = COALESCE(?, gas_phase),
+        gas_alarm = ?,
+        gas_fault = ?,
+        vib_rms = COALESCE(?, vib_rms),
+        vib_threshold = COALESCE(?, vib_threshold),
+        vib_alarm = ?,
+        mpu_ok = ?,
+        danger = ?,
+        alarm_latched = ?,
+        siren = COALESCE(?, siren),
+        telemetry_json = ?
+    WHERE id = ?
+  `).run(
+    name,
+    zone,
+    gallery,
+    deviceType,
+    gasRaw,
+    gasBaseline,
+    gasThreshold,
+    gasPhase,
+    gasAlarm,
+    gasFault,
+    vibRms,
+    vibThreshold,
+    vibAlarm,
+    mpuOk,
+    danger,
+    alarmLatched,
+    body.siren == null ? null : siren,
+    telemetryJson,
+    device.id
+  );
+
   const existing = db.prepare('SELECT id FROM env_conditions WHERE zone = ?').get(zone);
-  const air = body.air;
+  const envStatus = (gasAlarm || vibAlarm || danger) ? 'warning' : 'normal';
 
   if (existing) {
-    if (air && air.raw != null) {
+    if (gas && gasRaw != null) {
       db.prepare(`
         UPDATE env_conditions
-        SET device_id = ?, temperature = ?, humidity = ?,
+        SET device_id = ?, temperature = COALESCE(?, temperature), humidity = COALESCE(?, humidity),
             mq2_raw = ?, mq2_threshold = ?, alarm = ?, alarm_source = ?,
             siren = ?, status = ?, updated_at = datetime('now')
         WHERE zone = ?
@@ -459,20 +572,38 @@ export function upsertEnvFromTelemetry(device, body) {
         device.id,
         body.temperature ?? null,
         body.humidity ?? null,
-        air.raw,
-        air.threshold ?? null,
-        air.alarm ? 1 : 0,
-        body.alarmSource || null,
+        gasRaw,
+        gasThreshold,
+        gasAlarm || vibAlarm ? 1 : 0,
+        body.alarmSource || (gasAlarm ? 'MQ135_GAS' : vibAlarm ? 'MPU6050_VIB' : null),
         siren,
-        air.alarm ? 'warning' : 'normal',
+        envStatus,
         zone
       );
     } else {
       db.prepare(`
         UPDATE env_conditions
-        SET device_id = ?, siren = ?, alarm_source = ?, updated_at = datetime('now')
+        SET device_id = ?, siren = ?, alarm_source = ?, status = ?, updated_at = datetime('now')
         WHERE zone = ?
-      `).run(device.id, siren, body.alarmSource || null, zone);
+      `).run(device.id, siren, body.alarmSource || null, envStatus, zone);
     }
+  } else if (zone) {
+    db.prepare(`
+      INSERT INTO env_conditions (
+        zone, device_id, temperature, humidity, mq2_raw, mq2_threshold,
+        alarm, alarm_source, siren, status, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    `).run(
+      zone,
+      device.id,
+      body.temperature ?? 28.5,
+      body.humidity ?? 60.0,
+      gasRaw,
+      gasThreshold,
+      gasAlarm || vibAlarm ? 1 : 0,
+      body.alarmSource || null,
+      siren,
+      envStatus
+    );
   }
 }

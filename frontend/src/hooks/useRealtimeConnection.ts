@@ -18,10 +18,14 @@ export function useRealtimeConnection() {
     // 1. Charger les données initiales réelles de la base
     const fetchInitialData = async () => {
       try {
-        const [minersRes, alertsRes] = await Promise.all([
+        const [minersRes, alertsRes, devicesRes] = await Promise.all([
           apiService.getMiners(),
           apiService.getAlerts(),
+          apiService.getDevices().catch(() => ({ devices: [] })),
         ]);
+        if (devicesRes?.devices) {
+          useStore.getState().setUlinziDevices(devicesRes.devices);
+        }
 
         if (minersRes.miners) {
           const mappedMiners = minersRes.miners.map((m: any) => {
@@ -192,6 +196,18 @@ export function useRealtimeConnection() {
 
     socket.on('alerts-cleared', () => {
       useStore.getState().clearAlerts();
+    });
+
+    socket.on('device-status', (data: any) => {
+      if (!data) return;
+      useStore.getState().upsertUlinziDevice(data);
+      useStore.getState().setZoneDevice(data);
+    });
+
+    socket.on('device-removed', (data: any) => {
+      if (data?.deviceId) {
+        useStore.getState().removeUlinziDevice(data.deviceId);
+      }
     });
 
     return () => {

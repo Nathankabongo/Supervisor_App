@@ -23,7 +23,7 @@ export function ackMessageInDb(messageId, minerId) {
     db.prepare("UPDATE messages SET status='read', read_by=? WHERE id=?")
       .run(JSON.stringify(readBy), messageId);
     console.log(`✉️ Message ${messageId} marqué comme lu par ${minerId}`);
-    
+
     // Broadcast message update to update the UI immediately
     if (websocketManager) {
       websocketManager.broadcast('message-update', {
@@ -37,21 +37,21 @@ export function ackMessageInDb(messageId, minerId) {
 
 // Map DB snake_case rows to frontend camelCase
 function mapMessage(m) {
-  return { ...m, targets: JSON.parse(m.targets||'[]'), deliveredTo: JSON.parse(m.delivered_to||'[]'), readBy: JSON.parse(m.read_by||'[]'), recipientMode: m.recipient_mode, createdAt: m.created_at };
+  return { ...m, targets: JSON.parse(m.targets || '[]'), deliveredTo: JSON.parse(m.delivered_to || '[]'), readBy: JSON.parse(m.read_by || '[]'), recipientMode: m.recipient_mode, createdAt: m.created_at };
 }
 function mapEvent(e) {
   return { ...e, minerId: e.miner_id, minerName: e.miner_name, eventType: e.event_type, createdAt: e.created_at };
 }
 function mapMiner(m) {
   if (!m) return null;
-  return { 
-    ...m, 
+  return {
+    ...m,
     latitude: m.latitude ?? null,
     longitude: m.longitude ?? null,
     motion: m.motion || 'still',
-    heartRate: m.heart_rate, 
-    currentZone: m.zone, 
-    currentGallery: m.gallery, 
+    heartRate: m.heart_rate,
+    currentZone: m.zone,
+    currentGallery: m.gallery,
     lastUpdate: m.last_update,
     watchId: m.watch_id,
     isInService: m.is_in_service === 1,
@@ -97,8 +97,8 @@ function mapAlertRow(a) {
 router.post('/messages/send', (req, res) => {
   const { content, type, recipientMode, targets } = req.body;
   if (!content || !type || !recipientMode) return res.status(400).json({ error: 'content, type et recipientMode requis' });
-  if (!['text','voice'].includes(type)) return res.status(400).json({ error: 'Type invalide' });
-  if (!['all','zone','miner'].includes(recipientMode)) return res.status(400).json({ error: 'recipientMode invalide' });
+  if (!['text', 'voice'].includes(type)) return res.status(400).json({ error: 'Type invalide' });
+  if (!['all', 'zone', 'miner'].includes(recipientMode)) return res.status(400).json({ error: 'recipientMode invalide' });
   if (recipientMode !== 'all' && (!targets || targets.length === 0)) return res.status(400).json({ error: 'targets requis' });
 
   const db = getDb();
@@ -126,7 +126,7 @@ router.post('/messages/send', (req, res) => {
 
 router.get('/messages', (req, res) => {
   const db = getDb();
-  const { limit=50, offset=0 } = req.query;
+  const { limit = 50, offset = 0 } = req.query;
   const msgs = db.prepare('SELECT * FROM messages ORDER BY created_at DESC LIMIT ? OFFSET ?').all(Number(limit), Number(offset));
   const total = db.prepare('SELECT COUNT(*) as c FROM messages').get().c;
   res.json({ messages: msgs.map(mapMessage), total });
@@ -206,7 +206,7 @@ router.post('/alerts/:id/resolve', (req, res) => {
   if (realTimeDataService) {
     realTimeDataService.resolveAlert(req.params.id);
   }
-  if (existing?.zone && (existing.siren === 1 || existing.source === 'GAS_SENSOR' || existing.source === 'LILYGO_INCIDENT')) {
+  if (existing?.zone && (existing.siren === 1 || ['GAS_SENSOR', 'VIB_SENSOR', 'SENSOR_FAULT', 'LILYGO_INCIDENT'].includes(existing.source))) {
     enqueueDeactivateSirenForZone(existing.zone, req.params.id);
   }
   res.json({ success: true });
@@ -217,13 +217,13 @@ router.post('/alerts/:id/resolve', (req, res) => {
 router.post('/trace/events', (req, res) => {
   const { minerId, minerName, eventType, zone, gallery, details, duration } = req.body;
   if (!minerId || !eventType || !zone) return res.status(400).json({ error: 'minerId, eventType et zone requis' });
-  const valid = ['entry','exit','zone_change','alert','rest','equipment','shift_start','shift_end'];
+  const valid = ['entry', 'exit', 'zone_change', 'alert', 'rest', 'equipment', 'shift_start', 'shift_end'];
   if (!valid.includes(eventType)) return res.status(400).json({ error: `eventType invalide` });
 
   const db = getDb();
-  const id = `TR-${String(Date.now())}-${Math.random().toString(36).slice(2,6)}`;
+  const id = `TR-${String(Date.now())}-${Math.random().toString(36).slice(2, 6)}`;
   db.prepare('INSERT INTO trace_events (id,miner_id,miner_name,event_type,zone,gallery,details,duration) VALUES (?,?,?,?,?,?,?,?)')
-    .run(id, minerId, minerName||minerId, eventType, zone, gallery||'', details||null, duration||null);
+    .run(id, minerId, minerName || minerId, eventType, zone, gallery || '', details || null, duration || null);
   const event = db.prepare('SELECT * FROM trace_events WHERE id=?').get(id);
   console.log(`📍 Traçabilité: ${id} - ${minerName} ${eventType} → ${zone}`);
   res.json({ success: true, event: mapEvent(event) });
@@ -231,7 +231,7 @@ router.post('/trace/events', (req, res) => {
 
 router.get('/trace/events', (req, res) => {
   const db = getDb();
-  const { minerId, zone, eventType, limit=100, offset=0 } = req.query;
+  const { minerId, zone, eventType, limit = 100, offset = 0 } = req.query;
   let sql = 'SELECT * FROM trace_events WHERE 1=1';
   const params = [];
   if (minerId) { sql += ' AND miner_id=?'; params.push(minerId); }
@@ -258,7 +258,7 @@ function getTraceStats(db) {
   const uniqueMiners = db.prepare('SELECT COUNT(DISTINCT miner_id) as c FROM trace_events').get().c;
   const totalEvents = db.prepare('SELECT COUNT(*) as c FROM trace_events').get().c;
 
-  const zones = ['ZONE A','ZONE B','ZONE C','ZONE D','ZONE E','ZONE F'];
+  const zones = ['ZONE A', 'ZONE B', 'ZONE C', 'ZONE D', 'ZONE E', 'ZONE F'];
   const zoneActivity = zones.map(z => ({
     zone: z,
     entries: db.prepare("SELECT COUNT(*) as c FROM trace_events WHERE zone=? AND event_type='entry'").get(z).c,
@@ -266,7 +266,7 @@ function getTraceStats(db) {
     total: db.prepare('SELECT COUNT(*) as c FROM trace_events WHERE zone=?').get(z).c,
   }));
 
-  const types = ['entry','exit','zone_change','alert','rest','equipment','shift_start','shift_end'];
+  const types = ['entry', 'exit', 'zone_change', 'alert', 'rest', 'equipment', 'shift_start', 'shift_end'];
   const typeDistribution = types.map(t => ({ type: t, count: db.prepare('SELECT COUNT(*) as c FROM trace_events WHERE event_type=?').get(t).c }));
 
   return { totalEntries, totalExits, totalAlerts, totalZoneChanges, uniqueMiners, totalEvents, zoneActivity, typeDistribution };
@@ -352,7 +352,7 @@ router.post('/miners', (req, res) => {
   `).run(matricule, name, matricule, role, phone || '', emergency_contact || '', blood_group || 'O+', zone || 'ZONE B', null, 'Actif');
 
   const miner = db.prepare('SELECT * FROM miners WHERE id=?').get(matricule);
-  
+
   if (realTimeDataService) {
     realTimeDataService.miners.set(matricule, {
       id: matricule,
@@ -405,10 +405,10 @@ router.put('/miners/:id', (req, res) => {
       role=COALESCE(?,role),
       last_update=datetime('now') 
     WHERE id=?
-  `).run(zone||null, gallery||null, status||null, heart_rate||null, temperature||null, battery||null, x??null, y??null, phone??null, emergency_contact??null, blood_group??null, account_status??null, name||null, role||null, req.params.id);
-  
+  `).run(zone || null, gallery || null, status || null, heart_rate || null, temperature || null, battery || null, x ?? null, y ?? null, phone ?? null, emergency_contact ?? null, blood_group ?? null, account_status ?? null, name || null, role || null, req.params.id);
+
   const miner = db.prepare('SELECT * FROM miners WHERE id=?').get(req.params.id);
-  
+
   // Sync memory
   if (realTimeDataService && miner) {
     const memMiner = realTimeDataService.miners.get(req.params.id);
@@ -436,31 +436,31 @@ router.put('/miners/:id', (req, res) => {
 router.delete('/miners/:id', (req, res) => {
   const db = getDb();
   const minerId = req.params.id;
-  
+
   // Vérifier si le mineur existe
   const miner = db.prepare('SELECT * FROM miners WHERE id=?').get(minerId);
   if (!miner) {
     return res.status(404).json({ error: 'Mineur non trouvé' });
   }
-  
+
   // Vérifier si le mineur est en service
   if (miner.is_underground === 1 || miner.is_in_service === 1) {
     return res.status(400).json({ error: 'Impossible de supprimer un mineur en service' });
   }
-  
+
   // Détacher la montre si associée
   if (miner.watch_id) {
     db.prepare("UPDATE watches SET status = 'available' WHERE id = ?").run(miner.watch_id);
   }
-  
+
   // Supprimer le mineur
   db.prepare('DELETE FROM miners WHERE id=?').run(minerId);
-  
+
   // Supprimer de la mémoire
   if (realTimeDataService) {
     realTimeDataService.miners.delete(minerId);
   }
-  
+
   res.json({ success: true, message: 'Mineur supprimé avec succès' });
 });
 
@@ -498,7 +498,7 @@ router.post('/devices/associate', (req, res) => {
 
   // Unbind this watch from anyone else
   db.prepare('UPDATE miners SET watch_id = NULL WHERE watch_id = ?').run(normalizedWatchId);
-  
+
   // Unbind this miner from their old watch
   if (miner.watch_id) {
     db.prepare('UPDATE watches SET status = \'available\' WHERE id = ?').run(miner.watch_id);
@@ -691,10 +691,10 @@ router.get('/system/stats', (req, res) => {
   let cpuUsage = 0;
   if (cpus && cpus.length > 0) {
     // Very basic average cpu estimation for the moment
-    cpuUsage = Math.round((os.loadavg()[0] / cpus.length) * 100) || 5; 
+    cpuUsage = Math.round((os.loadavg()[0] / cpus.length) * 100) || 5;
   }
-  
-  res.json({ 
+
+  res.json({
     uptime: process.uptime(),
     memoryUsed,
     totalMem,

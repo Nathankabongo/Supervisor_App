@@ -1,7 +1,7 @@
 import express from 'express';
 import { authUser, requireAdmin } from '../middleware/authUser.js';
 import { authDevice } from '../middleware/authDevice.js';
-import { provisionDevice, revokeDevice } from '../services/deviceAuthService.js';
+import { deleteDevice, provisionDevice, registerBoxWithKey, revokeDevice } from '../services/deviceAuthService.js';
 import {
   consumePendingCommands,
   enqueueCommand,
@@ -34,26 +34,43 @@ function publicStatus(deviceRow) {
   const mapped = mapDevicePublic(deviceRow);
   const env = envSnapshot(deviceRow.zone);
   return {
+    ...mapped,
     deviceId: mapped.id,
-    zone: mapped.zone,
-    gallery: mapped.gallery,
-    status: mapped.status,
-    lastSeen: mapped.lastSeen,
-    siren: mapped.siren,
-    lastCommandId: mapped.lastCommandId,
-    lastCommandStatus: mapped.lastCommandStatus,
-    lastAction: mapped.alarmSource,
-    activeAlertId: mapped.activeAlertId,
     air: {
-      sensorType: 'MQ2',
-      raw: env?.mq2_raw ?? null,
-      threshold: env?.mq2_threshold ?? null,
-      alarm: env?.alarm === 1,
+      sensorType: mapped.deviceType === 'ULINZI_BOX' ? 'MQ-135' : 'MQ2',
+      raw: mapped.gas?.raw ?? env?.mq2_raw ?? null,
+      threshold: mapped.gas?.threshold ?? env?.mq2_threshold ?? null,
+      alarm: mapped.gas?.alarm ?? (env?.alarm === 1),
     },
     temperature: env?.temperature ?? null,
     humidity: env?.humidity ?? null,
   };
 }
+
+/**
+ * Auto-enregistrement d'une Ulinzi Box (multi-box sans copier-coller manuel de token).
+ */
+router.post('/register', (req, res) => {
+  const body = req.body || {};
+  const provisionKey = req.headers['x-provision-key'] || body.provisionKey;
+  const result = registerBoxWithKey({
+    id: body.deviceId || body.id,
+    name: body.name,
+    zone: body.zone,
+    gallery: body.gallery,
+    deviceType: body.deviceType || 'ULINZI_BOX',
+    provisionKey,
+  });
+  if (result.error) {
+    return res.status(result.status || 400).json({ error: result.message });
+  }
+  const fresh = getDevice(result.device.id);
+  if (websocketManager && fresh) {
+    websocketManager.broadcast('device-status', publicStatus(fresh));
+  }
+  console.log(`📦 [devices] Box enregistrée/authentifiée: ${result.device.id} (${result.device.zone})`);
+  res.status(200).json({ ok: true, device: result.device, deviceToken: result.deviceToken });
+});
 
 router.post('/', authUser, requireAdmin, (req, res) => {
   const { id, zone, gallery } = req.body || {};
@@ -80,6 +97,16 @@ router.get('/:deviceId/status', authUser, (req, res) => {
 router.post('/:deviceId/revoke', authUser, requireAdmin, (req, res) => {
   if (!revokeDevice(req.params.deviceId)) {
     return res.status(404).json({ error: 'Appareil introuvable' });
+  }
+  res.json({ ok: true });
+});
+
+router.delete('/:deviceId', authUser, (req, res) => {
+  if (!deleteDevice(req.params.deviceId)) {
+    return res.status(404).json({ error: 'Appareil introuvable' });
+  }
+  if (websocketManager) {
+    websocketManager.broadcast('device-removed', { deviceId: req.params.deviceId });
   }
   res.json({ ok: true });
 });

@@ -108,6 +108,21 @@ function migrateZoneAlarm() {
   addColumnIfMissing('devices', 'last_command_status', 'last_command_status TEXT');
   addColumnIfMissing('devices', 'last_ip', 'last_ip TEXT');
   addColumnIfMissing('devices', 'listen_port', 'listen_port INTEGER');
+  addColumnIfMissing('devices', 'name', 'name TEXT');
+  addColumnIfMissing('devices', 'device_type', "device_type TEXT DEFAULT 'ULINZI_BOX'");
+  addColumnIfMissing('devices', 'gas_raw', 'gas_raw REAL');
+  addColumnIfMissing('devices', 'gas_baseline', 'gas_baseline REAL');
+  addColumnIfMissing('devices', 'gas_threshold', 'gas_threshold REAL');
+  addColumnIfMissing('devices', 'gas_phase', 'gas_phase INTEGER');
+  addColumnIfMissing('devices', 'gas_alarm', 'gas_alarm INTEGER DEFAULT 0');
+  addColumnIfMissing('devices', 'gas_fault', 'gas_fault INTEGER DEFAULT 0');
+  addColumnIfMissing('devices', 'vib_rms', 'vib_rms REAL');
+  addColumnIfMissing('devices', 'vib_threshold', 'vib_threshold REAL');
+  addColumnIfMissing('devices', 'vib_alarm', 'vib_alarm INTEGER DEFAULT 0');
+  addColumnIfMissing('devices', 'mpu_ok', 'mpu_ok INTEGER DEFAULT 1');
+  addColumnIfMissing('devices', 'danger', 'danger INTEGER DEFAULT 0');
+  addColumnIfMissing('devices', 'alarm_latched', 'alarm_latched INTEGER DEFAULT 0');
+  addColumnIfMissing('devices', 'telemetry_json', 'telemetry_json TEXT');
   addColumnIfMissing('miners', 'latitude', 'latitude REAL');
   addColumnIfMissing('miners', 'longitude', 'longitude REAL');
   addColumnIfMissing('miners', 'motion', 'motion TEXT DEFAULT \'still\'');
@@ -290,12 +305,12 @@ function seed() {
   if (userCount === 0) {
     const h = bcrypt.hashSync('admin123', 10);
     db.prepare('INSERT INTO users (username,password,name,role) VALUES (?,?,?,?)').run('supervisor', h, 'Jean Dupont', 'supervisor');
-    db.prepare('INSERT INTO users (username,password,name,role) VALUES (?,?,?,?)').run('admin', bcrypt.hashSync('admin123',10), 'Admin', 'admin');
+    db.prepare('INSERT INTO users (username,password,name,role) VALUES (?,?,?,?)').run('admin', bcrypt.hashSync('admin123', 10), 'Admin', 'admin');
   }
 
   // Gateways LoRa seed (UI historique) — pas l'ESP32 zone
   const gw = db.prepare('INSERT OR IGNORE INTO lora_gateways (id,zone,signal,battery) VALUES (?,?,?,?)');
-  ['A','B','C','D','E','F'].forEach((z,i) => gw.run(`GW-0${i+1}`, `ZONE ${z}`, 95, 85));
+  ['A', 'B', 'C', 'D', 'E', 'F'].forEach((z, i) => gw.run(`GW-0${i + 1}`, `ZONE ${z}`, 95, 85));
 
   db.prepare(`
     INSERT OR IGNORE INTO devices (id, zone, gallery, status, last_seen)
@@ -306,7 +321,7 @@ function seed() {
   const envCount = db.prepare('SELECT COUNT(*) as c FROM env_conditions').get().c;
   if (envCount === 0) {
     const env = db.prepare('INSERT INTO env_conditions (zone,temperature,humidity,co2_level,dust_level,noise_level,wind_speed,pressure,status) VALUES (?,?,?,?,?,?,?,?,?)');
-    ['A','B','C','D','E','F'].forEach(z => {
+    ['A', 'B', 'C', 'D', 'E', 'F'].forEach(z => {
       env.run(`ZONE ${z}`, 28.5, 60.0, 420, 0.5, 75, 1.2, 1015, 'normal');
     });
   }

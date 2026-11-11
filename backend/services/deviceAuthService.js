@@ -50,8 +50,67 @@ export function provisionDevice({ id, zone, gallery }) {
   return { device, deviceToken: plaintext };
 }
 
+export function getProvisionKey() {
+  return process.env.ULINZI_PROVISION_KEY || 'ULINZI-SITE-2026';
+}
+
+/**
+ * Permet à une Ulinzi Box de s'enregistrer automatiquement (ou de renouveler son jeton
+ * si la base a été réinitialisée) grâce à la clé de provisionnement du site.
+ */
+export function registerBoxWithKey({ id, name, zone, gallery, deviceType, provisionKey }) {
+  if (!provisionKey || provisionKey !== getProvisionKey()) {
+    return { error: 'unauthorized', status: 401, message: 'Clé de provisionnement invalide' };
+  }
+  const cleanId = String(id || '').trim();
+  const cleanZone = String(zone || 'ZONE B').trim();
+  if (!cleanId) {
+    return { error: 'invalid', status: 400, message: 'deviceId requis' };
+  }
+
+  const db = getDb();
+  const existing = db.prepare('SELECT * FROM devices WHERE id = ?').get(cleanId);
+  if (existing?.revoked) {
+    return { error: 'revoked', status: 403, message: 'Appareil révoqué' };
+  }
+
+  const plaintext = generateDeviceToken();
+  const tokenHash = hashDeviceToken(plaintext);
+
+  if (existing) {
+    db.prepare(`
+      UPDATE devices
+      SET name = COALESCE(?, name),
+          zone = COALESCE(NULLIF(?, ''), zone),
+          gallery = COALESCE(NULLIF(?, ''), gallery),
+          device_type = COALESCE(NULLIF(?, ''), device_type),
+          token_hash = ?,
+          revoked = 0
+      WHERE id = ?
+    `).run(name || null, cleanZone, gallery || null, deviceType || 'ULINZI_BOX', tokenHash, cleanId);
+  } else {
+    db.prepare(`
+      INSERT INTO devices (id, name, zone, gallery, device_type, status, last_seen, token_hash, revoked)
+      VALUES (?, ?, ?, ?, ?, 'ONLINE', datetime('now'), ?, 0)
+    `).run(cleanId, name || cleanId, cleanZone, gallery || null, deviceType || 'ULINZI_BOX', tokenHash);
+  }
+
+  const device = db.prepare(
+    'SELECT id, name, zone, gallery, device_type, status, last_seen, revoked FROM devices WHERE id = ?'
+  ).get(cleanId);
+
+  return { device, deviceToken: plaintext };
+}
+
 export function revokeDevice(deviceId) {
   const db = getDb();
   const info = db.prepare('UPDATE devices SET revoked = 1, token_hash = NULL WHERE id = ?').run(deviceId);
+  return info.changes > 0;
+}
+
+export function deleteDevice(deviceId) {
+  const db = getDb();
+  db.prepare('DELETE FROM device_commands WHERE device_id = ?').run(deviceId);
+  const info = db.prepare('DELETE FROM devices WHERE id = ?').run(deviceId);
   return info.changes > 0;
 }

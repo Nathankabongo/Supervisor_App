@@ -92,6 +92,47 @@ export interface ZoneDeviceStatus {
   activeAlertId?: string | null;
 }
 
+export interface UlinziBoxDevice {
+  id: string;
+  deviceId?: string;
+  name?: string;
+  zone: string;
+  gallery?: string | null;
+  deviceType?: string;
+  status: 'ONLINE' | 'OFFLINE' | 'UNKNOWN' | string;
+  lastSeen: string | null;
+  lastIp?: string | null;
+  siren: boolean;
+  danger?: boolean;
+  alarmLatched?: boolean;
+  alarmSource?: string | null;
+  activeAlertId?: string | null;
+  lastCommandId?: string | null;
+  lastCommandStatus?: string | null;
+  uptimeMs?: number | null;
+  gas?: {
+    raw: number | null;
+    baseline: number | null;
+    threshold: number | null;
+    phase: number | null;
+    warmupRemainingS?: number | null;
+    alarm: boolean;
+    fault: boolean;
+  };
+  vibration?: {
+    rms: number | null;
+    threshold: number | null;
+    alarm: boolean;
+    mpuOk: boolean;
+    ax?: number | null;
+    ay?: number | null;
+    az?: number | null;
+    gx?: number | null;
+    gy?: number | null;
+    gz?: number | null;
+  };
+}
+
 export type TraceEventType =
   | 'entry'
   | 'exit'
@@ -185,6 +226,7 @@ interface StoreState {
   isRealtime: boolean;
   liveToastAlert: Alert | null;
   zoneDevice: ZoneDeviceStatus | null;
+  ulinziDevices: UlinziBoxDevice[];
   sirenLatencyRuns: SirenLatencySample[];
   vehicles: Vehicle[];
   maintenanceLogs: MaintenanceLog[];
@@ -199,6 +241,9 @@ interface StoreState {
   addAlert: (alert: Alert) => void;
   setLiveToastAlert: (alert: Alert | null) => void;
   setZoneDevice: (status: ZoneDeviceStatus) => void;
+  setUlinziDevices: (devices: UlinziBoxDevice[]) => void;
+  upsertUlinziDevice: (device: UlinziBoxDevice) => void;
+  removeUlinziDevice: (deviceId: string) => void;
   markAlertSirenConfirmed: (alertId: string | null | undefined, sirenOn?: boolean) => void;
   upsertSirenLatency: (sample: Partial<SirenLatencySample> & { alertId?: string | null; commandId?: string | null }) => void;
   resolveAlert: (id: string) => void;
@@ -224,6 +269,7 @@ export const useStore = create<StoreState>((set) => ({
   selectedMiner: null,
   liveToastAlert: null,
   zoneDevice: null,
+  ulinziDevices: [],
   sirenLatencyRuns: [],
   filters: {
     zone: 'all',
@@ -260,6 +306,27 @@ export const useStore = create<StoreState>((set) => ({
   setLiveToastAlert: (alert) => set({ liveToastAlert: alert }),
 
   setZoneDevice: (zoneDevice) => set({ zoneDevice }),
+
+  setUlinziDevices: (ulinziDevices) => set({ ulinziDevices }),
+
+  upsertUlinziDevice: (device) =>
+    set((state) => {
+      const id = device.id || device.deviceId;
+      if (!id) return state;
+      const normalized = { ...device, id };
+      const idx = state.ulinziDevices.findIndex((d) => d.id === id);
+      if (idx >= 0) {
+        const next = [...state.ulinziDevices];
+        next[idx] = { ...next[idx], ...normalized };
+        return { ulinziDevices: next };
+      }
+      return { ulinziDevices: [...state.ulinziDevices, normalized] };
+    }),
+
+  removeUlinziDevice: (deviceId) =>
+    set((state) => ({
+      ulinziDevices: state.ulinziDevices.filter((d) => d.id !== deviceId),
+    })),
 
   markAlertSirenConfirmed: (alertId, sirenOn = true) =>
     set((state) => {

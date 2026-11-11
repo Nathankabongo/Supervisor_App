@@ -196,6 +196,23 @@ class ApiService {
     return this.request(`/data/alerts/${alertId}/resolve`, { method: 'POST' });
   }
 
+  async getDevices(): Promise<any> {
+    return this.request('/devices');
+  }
+
+  async provisionDevice(data: { id: string; zone: string; gallery?: string }): Promise<any> {
+    return this.request('/devices', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteDevice(deviceId: string): Promise<any> {
+    return this.request(`/devices/${encodeURIComponent(deviceId)}`, {
+      method: 'DELETE',
+    });
+  }
+
   async getDeviceStatus(deviceId: string): Promise<any> {
     return this.request(`/devices/${deviceId}/status`);
   }

@@ -22,6 +22,8 @@ import {
   Wrench,
   Leaf,
   Map,
+  Box,
+  Wind,
 } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import apiService from '../services/api';
@@ -65,6 +67,7 @@ export default function Dashboard() {
     setShowTrajectories,
     vehicles,
     esgMetrics,
+    ulinziDevices,
   } = useStore();
   const [searchQuery, setSearchQuery] = useState('');
   const [zoom, setZoom] = useState(1);
@@ -359,6 +362,66 @@ export default function Dashboard() {
             <span className="text-sm font-black text-purple-400 mt-1 block">1015 hPa</span>
           </div>
         </div>
+
+        {/* Boîtiers Ulinzi Box en direct */}
+        {ulinziDevices.length > 0 && (
+          <div className="mt-3 pt-3 border-t border-gray-700/60">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[11px] font-bold text-cyan-300 uppercase tracking-wider flex items-center gap-1.5">
+                <Box size={14} /> Boîtiers Ulinzi Box connectés ({ulinziDevices.filter((d) => d.status === 'ONLINE').length}/{ulinziDevices.length} en ligne)
+              </span>
+              <button
+                onClick={() => navigate('/devices')}
+                className="text-[11px] text-cyan-400 hover:text-cyan-300 font-semibold flex items-center gap-1"
+              >
+                Gérer les boîtiers <ArrowRight size={12} />
+              </button>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+              {ulinziDevices.map((box) => {
+                const isOnline = box.status === 'ONLINE';
+                const hasDanger = Boolean(box.danger || box.gas?.alarm || box.vibration?.alarm);
+                return (
+                  <div
+                    key={box.id}
+                    onClick={() => navigate('/devices')}
+                    className={`bg-[#0f172a] rounded-lg p-2.5 border cursor-pointer transition-colors ${
+                      hasDanger
+                        ? 'border-red-500/70'
+                        : isOnline
+                        ? 'border-emerald-500/40 hover:border-cyan-500/60'
+                        : 'border-gray-800 hover:border-gray-700'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2 mb-1.5">
+                      <span className="text-xs font-bold font-mono text-white truncate">{box.id}</span>
+                      <span
+                        className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
+                          isOnline ? 'bg-emerald-500/20 text-emerald-300' : 'bg-slate-800 text-slate-400'
+                        }`}
+                      >
+                        {box.zone} • {isOnline ? 'ONLINE' : box.status}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between text-[11px] text-slate-300 font-mono">
+                      <span className="flex items-center gap-1">
+                        <Wind size={11} className={box.gas?.alarm ? 'text-red-400' : 'text-cyan-400'} />
+                        Gaz: {box.gas?.raw ?? '—'}
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <Activity size={11} className={box.vibration?.alarm ? 'text-red-400' : 'text-emerald-400'} />
+                        Vib: {box.vibration?.rms != null ? `${Number(box.vibration.rms).toFixed(2)}` : '—'}
+                      </span>
+                      <span className={box.siren ? 'text-red-400 font-bold' : 'text-slate-400'}>
+                        {box.siren ? 'SIRÈNE ON' : 'OK'}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Carte + suivi mineurs */}
