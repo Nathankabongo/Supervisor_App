@@ -78,16 +78,21 @@ export function registerBoxWithKey({ id, name, zone, gallery, deviceType, provis
   const tokenHash = hashDeviceToken(plaintext);
 
   if (existing) {
+    // Supervisor_App reste la source de vérité : on ne réécrase pas une zone/galerie déjà affectée par l'admin
+    const keepZone = existing.zone && existing.zone !== 'NON_AFFECTEE';
+    const nextZone = keepZone ? existing.zone : cleanZone;
+    const nextGallery = existing.gallery && keepZone ? existing.gallery : (gallery || existing.gallery || null);
+    const nextName = existing.name && keepZone ? existing.name : (name || existing.name || null);
     db.prepare(`
       UPDATE devices
-      SET name = COALESCE(?, name),
-          zone = COALESCE(NULLIF(?, ''), zone),
-          gallery = COALESCE(NULLIF(?, ''), gallery),
+      SET name = ?,
+          zone = ?,
+          gallery = ?,
           device_type = COALESCE(NULLIF(?, ''), device_type),
           token_hash = ?,
           revoked = 0
       WHERE id = ?
-    `).run(name || null, cleanZone, gallery || null, deviceType || 'ULINZI_BOX', tokenHash, cleanId);
+    `).run(nextName, nextZone, nextGallery, deviceType || 'ULINZI_BOX', tokenHash, cleanId);
   } else {
     db.prepare(`
       INSERT INTO devices (id, name, zone, gallery, device_type, status, last_seen, token_hash, revoked)

@@ -31,6 +31,7 @@ export function getDb() {
 
     initSchema();
     migrateZoneAlarm();
+    migrateMineMap();
     seed();
   }
   return db;
@@ -129,6 +130,60 @@ function migrateZoneAlarm() {
   addColumnIfMissing('miners', 'immobile_since', 'immobile_since TEXT');
   addColumnIfMissing('gps_track_logs', 'latitude', 'latitude REAL');
   addColumnIfMissing('gps_track_logs', 'longitude', 'longitude REAL');
+}
+
+/** Migrations non destructives — cartographie souterraine & ancres Ulinzi Box (IPS). */
+function migrateMineMap() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS mine_levels (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      depth_m REAL DEFAULT 0,
+      width_m REAL DEFAULT 200,
+      height_m REAL DEFAULT 120,
+      background_image TEXT,
+      background_opacity REAL DEFAULT 0.35,
+      sort_order INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS mine_nodes (
+      id TEXT PRIMARY KEY,
+      level_id TEXT NOT NULL,
+      x REAL NOT NULL,
+      y REAL NOT NULL,
+      type TEXT DEFAULT 'junction',
+      label TEXT,
+      zone TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS mine_segments (
+      id TEXT PRIMARY KEY,
+      level_id TEXT NOT NULL,
+      from_node_id TEXT NOT NULL,
+      to_node_id TEXT NOT NULL,
+      name TEXT,
+      width_m REAL DEFAULT 4,
+      status TEXT DEFAULT 'open',
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS mine_anchors (
+      id TEXT PRIMARY KEY,
+      device_id TEXT NOT NULL UNIQUE,
+      level_id TEXT NOT NULL,
+      segment_id TEXT,
+      x REAL NOT NULL,
+      y REAL NOT NULL,
+      tx_power REAL DEFAULT -59,
+      path_loss_n REAL DEFAULT 2.3,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_mine_nodes_level ON mine_nodes(level_id);
+    CREATE INDEX IF NOT EXISTS idx_mine_segments_level ON mine_segments(level_id);
+    CREATE INDEX IF NOT EXISTS idx_mine_anchors_level ON mine_anchors(level_id);
+  `);
+
+  addColumnIfMissing('miners', 'level_id', 'level_id TEXT');
+  addColumnIfMissing('miners', 'position_source', "position_source TEXT DEFAULT 'gps'");
 }
 
 function initSchema() {

@@ -2,7 +2,8 @@ import { useState, useEffect, useRef } from 'react';
 import apiService from '../services/api';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { Save, Plus, Trash2, MapPin, Info, Compass, ShieldAlert } from 'lucide-react';
+import { Save, Plus, Trash2, MapPin, Info, Compass, ShieldAlert, Layers } from 'lucide-react';
+import MineMapEditor from '../components/map/MineMapEditor';
 
 interface GisZone {
   name: string;
@@ -30,6 +31,9 @@ export default function GisConfig() {
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   
+  // Mode Surface (Satellite GPS) vs Souterrain (Galeries & Balises Ulinzi)
+  const [activeMode, setActiveMode] = useState<'surface' | 'underground'>('surface');
+
   // Zone sélectionnée pour l'édition et la visualisation
   const [selectedZoneIndex, setSelectedZoneIndex] = useState<number>(0);
 
@@ -303,29 +307,63 @@ export default function GisConfig() {
   return (
     <div className="flex flex-col h-full bg-[#0b1a2a] overflow-hidden">
       {/* Header */}
-      <div className="bg-[#1e293b] border-b border-gray-700 px-6 py-4 flex items-center justify-between">
+      <div className="bg-[#1e293b] border-b border-gray-700 px-6 py-4 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-bold text-white flex items-center gap-2">
             <MapPin className="text-green-500" size={24} />
-            Gestion des Sites & Zones Métiers (GIS)
+            Gestion des Sites & Cartographie Minière (GIS)
           </h1>
           <p className="text-xs text-gray-400">
-            Configurer les coordonnées réelles du site minier et délimiter les polygones des zones métiers GPS.
+            {activeMode === 'surface'
+              ? 'Configurer les coordonnées réelles du site minier et délimiter les polygones des zones métiers GPS.'
+              : 'Modéliser les niveaux, galeries souterraines et placer les balises Ulinzi Box pour la localisation sans GPS.'}
           </p>
         </div>
-        
-        <button
-          onClick={handleSubmit}
-          disabled={saving}
-          className="bg-green-600 hover:bg-green-500 text-white font-semibold text-xs px-4 py-2 rounded-lg flex items-center gap-2 shadow-lg disabled:opacity-50 transition-colors"
-        >
-          <Save size={16} />
-          {saving ? "Sauvegarde..." : "Sauvegarder les modifications"}
-        </button>
+
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex p-1 rounded-lg bg-[#0b1a2a] border border-gray-700">
+            <button
+              type="button"
+              onClick={() => setActiveMode('surface')}
+              className={`px-3 py-1.5 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-colors ${
+                activeMode === 'surface'
+                  ? 'bg-green-600 text-white'
+                  : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              <MapPin size={14} /> Surface (GPS)
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveMode('underground')}
+              className={`px-3 py-1.5 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-colors ${
+                activeMode === 'underground'
+                  ? 'bg-cyan-600 text-white'
+                  : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              <Layers size={14} /> Souterrain (Galeries &amp; Ulinzi)
+            </button>
+          </div>
+
+          {activeMode === 'surface' && (
+            <button
+              onClick={handleSubmit}
+              disabled={saving}
+              className="bg-green-600 hover:bg-green-500 text-white font-semibold text-xs px-4 py-2 rounded-lg flex items-center gap-2 shadow-lg disabled:opacity-50 transition-colors"
+            >
+              <Save size={16} />
+              {saving ? "Sauvegarde..." : "Sauvegarder les modifications"}
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Rendu principal */}
       <div className="flex-1 overflow-auto p-6 space-y-6">
+        {activeMode === 'underground' && <MineMapEditor />}
+
+        <div className={activeMode === 'surface' ? 'space-y-6' : 'hidden'}>
         {/* Messages de retour */}
         {error && (
           <div className="bg-red-950/80 border border-red-500/50 text-red-200 px-4 py-3 rounded-lg flex items-center gap-2 text-sm">
@@ -574,6 +612,7 @@ export default function GisConfig() {
               </div>
             </div>
           </div>
+        </div>
         </div>
       </div>
     </div>

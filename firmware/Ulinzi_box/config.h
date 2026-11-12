@@ -1,15 +1,16 @@
 #pragma once
 
 // ============================================================
-// CONFIGURATION DE CETTE ULINZI BOX
-// Pour déployer plusieurs box sur le site, modifiez simplement
-// BOX_ID, BOX_NAME, BOX_ZONE et BOX_GALLERY avant de flasher.
+// CONFIGURATION PLUG & PLAY DE CETTE ULINZI BOX
+// Laissez BOX_ID à "AUTO" : chaque ESP32 génère automatiquement
+// un identifiant unique depuis sa puce (ex: ULINZI-A4F2C1).
+// La zone et la galerie sont ensuite pilotées par Supervisor_App.
 // ============================================================
 
-#define BOX_ID          "ULINZI-BOX-01"      // Identifiant unique (ex: ULINZI-BOX-01, ULINZI-BOX-02...)
-#define BOX_NAME        "Ulinzi Box Zone B"  // Nom affiché dans Supervisor App
-#define BOX_ZONE        "ZONE B"             // Zone minière affectée
-#define BOX_GALLERY     "Galerie 3 Nord"     // Galerie / emplacement précis
+#define BOX_ID          "AUTO"               // "AUTO" = ID unique depuis la puce ESP32 (ou ID fixe personnalisé)
+#define BOX_NAME        "Ulinzi Box"         // Nom par défaut avant affectation dans Supervisor_App
+#define BOX_ZONE        "NON_AFFECTEE"       // Zone par défaut (mise à jour automatiquement par Supervisor_App)
+#define BOX_GALLERY     "En attente"         // Galerie par défaut (mise à jour automatiquement par Supervisor_App)
 
 // ---------------- Wi-Fi Serveur (Supervisor App) ----------------
 #define WIFI_STA_SSID   "Nathan Sky"
@@ -36,4 +37,8 @@
 #define COMMAND_POLL_MS       500UL    // Vérification ordres sirène toutes les 500 ms
 #define HTTP_TIMEOUT_MS       1500     // Timeout HTTP court (protège la réactivité)
 #define WIFI_RETRY_MS         5000UL   // Délai entre tentatives de reconnexion Wi-Fi
+
+// ---------------- Balise BLE (Localisation Souterraine IPS) ----------------
+#define ENABLE_BLE_BEACON     true     // Diffuse BOX_ID en BLE pour les montres T-Watch
+#define BLE_TX_POWER_1M       (-59)    // RSSI mesuré à 1 mètre (dBm) pour calibration IPS
 

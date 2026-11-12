@@ -29,6 +29,10 @@
 #include <hd44780.h>
 #include <hd44780ioClass/hd44780_I2Cexp.h>
 #include "config.h"
+#if ENABLE_BLE_BEACON
+#include <BLEDevice.h>
+#include <BLEAdvertising.h>
+#endif
 
 // ---------------- Broches (câblage box inchangé) ----------------
 const int MQ_PIN     = 34;   // MQ-135 AO (via pont diviseur !)
@@ -108,6 +112,12 @@ bool dangerNow = false;
 bool alarmLatched = false;
 bool remoteSirenOn = false;
 bool relayActive = false;
+
+// Identité dynamique Plug & Play (pilotée par puce ESP32 + Supervisor_App)
+char runtimeBoxId[24]      = BOX_ID;
+char runtimeBoxName[48]    = BOX_NAME;
+char runtimeBoxZone[32]    = BOX_ZONE;
+char runtimeBoxGallery[48] = BOX_GALLERY;
 
 // Détection de fronts pour l'historique & alertes backend
 bool prevGasAlarm = false, prevVibAlarm = false, prevGasFault = false, prevMpuFault = false;
@@ -213,7 +223,7 @@ void enqueueBackendAlert(const char* type, const char* severity, const char* sou
       snprintf(item.message, sizeof(item.message), "%s", message);
       alertSeq++;
       snprintf(item.clientEventId, sizeof(item.clientEventId), "%s-%s-%lu-%lu",
-               BOX_ID, type, (unsigned long)bootNonce, (unsigned long)alertSeq);
+               runtimeBoxId, type, (unsigned long)bootNonce, (unsigned long)alertSeq);
       alertQTail = (alertQTail + 1) % ALERT_Q_CAP;
       alertQCount++;
       netForceSync = true;
@@ -492,10 +502,10 @@ void handleApi() {
 
   String j;
   j.reserve(1400);
-  j += "{\"boxId\":\"" + String(BOX_ID) + "\"";
-  j += ",\"boxName\":\"" + String(BOX_NAME) + "\"";
-  j += ",\"zone\":\"" + String(BOX_ZONE) + "\"";
-  j += ",\"gallery\":\"" + String(BOX_GALLERY) + "\"";
+  j += "{\"boxId\":\"" + String(runtimeBoxId) + "\"";
+  j += ",\"boxName\":\"" + String(runtimeBoxName) + "\"";
+  j += ",\"zone\":\"" + String(runtimeBoxZone) + "\"";
+  j += ",\"gallery\":\"" + String(runtimeBoxGallery) + "\"";
   j += ",\"gas\":" + String(gasRaw);
   j += ",\"base\":" + String((int)gasBaseline);
   j += ",\"thr\":" + String((int)gasThresholdOn());
@@ -704,7 +714,7 @@ void evaluate() {
     logEvent("Danger gaz");
     char msg[96];
     snprintf(msg, sizeof(msg), "[%s] Seuil gaz MQ-135 depasse (%d >= %d)",
-             BOX_ID, gasRaw, (int)gasThresholdOn());
+             runtimeBoxId, gasRaw, (int)gasThresholdOn());
     enqueueBackendAlert("gas", "high", "GAS_SENSOR", "MQ-135",
                         (float)gasRaw, gasThresholdOn(), true, msg);
   }
@@ -716,7 +726,7 @@ void evaluate() {
     logEvent("Vibration anormale");
     char msg[96];
     snprintf(msg, sizeof(msg), "[%s] Vibration anormale MPU6050 (%.2f m/s2)",
-             BOX_ID, vibRms);
+             runtimeBoxId, vibRms);
     enqueueBackendAlert("vibration", "high", "VIB_SENSOR", "MPU6050",
                         vibRms, VIB_RMS_THRESHOLD, true, msg);
   }
@@ -727,7 +737,7 @@ void evaluate() {
   if (gasFault && !prevGasFault) {
     logEvent("Defaut capteur MQ-135");
     char msg[96];
-    snprintf(msg, sizeof(msg), "[%s] Defaut capteur gaz MQ-135 (val=%d)", BOX_ID, gasRaw);
+    snprintf(msg, sizeof(msg), "[%s] Defaut capteur gaz MQ-135 (val=%d)", runtimeBoxId, gasRaw);
     enqueueBackendAlert("sensor_fault", "medium", "SENSOR_FAULT", "MQ-135",
                         (float)gasRaw, 0.0f, FAULT_TRIGGERS_ALARM, msg);
   }
@@ -738,7 +748,7 @@ void evaluate() {
   if (mpuFault && !prevMpuFault) {
     logEvent("Defaut MPU6050");
     char msg[96];
-    snprintf(msg, sizeof(msg), "[%s] Capteur vibrations MPU6050 deconnecte", BOX_ID);
+    snprintf(msg, sizeof(msg), "[%s] Capteur vibrations MPU6050 deconnecte", runtimeBoxId);
     enqueueBackendAlert("sensor_fault", "medium", "SENSOR_FAULT", "MPU6050",
                         0.0f, 0.0f, FAULT_TRIGGERS_ALARM, msg);
   }
@@ -843,7 +853,7 @@ void updateLcd(unsigned long now) {
     if (mpuOK) snprintf(l1, sizeof(l1), "VIB:%.2f m/s2", vibRms);
     else       snprintf(l1, sizeof(l1), "VIB: MPU ABSENT");
   } else {
-    snprintf(l1, sizeof(l1), "%-16.16s", BOX_ID);
+    snprintf(l1, sizeof(l1), "%-16.16s", runtimeBoxId);
   }
 
   lcdLine(0, l1);
@@ -925,10 +935,10 @@ static int httpGetJson(const String& url, const char* token, String& response) {
 static bool registerBoxOnServer() {
   String url = String(API_BASE_URL) + "/api/devices/register";
   String body = String("{") +
-    "\"deviceId\":\"" + BOX_ID + "\"," +
-    "\"name\":\"" + BOX_NAME + "\"," +
-    "\"zone\":\"" + BOX_ZONE + "\"," +
-    "\"gallery\":\"" + BOX_GALLERY + "\"," +
+    "\"deviceId\":\"" + runtimeBoxId + "\"," +
+    "\"name\":\"" + runtimeBoxName + "\"," +
+    "\"zone\":\"" + runtimeBoxZone + "\"," +
+    "\"gallery\":\"" + runtimeBoxGallery + "\"," +
     "\"deviceType\":\"ULINZI_BOX\"," +
     "\"provisionKey\":\"" + PROVISION_KEY + "\"" +
   "}";
@@ -940,9 +950,9 @@ static bool registerBoxOnServer() {
       snprintf(deviceToken, sizeof(deviceToken), "%s", tok.c_str());
       prefs.begin("ulinzi", false);
       prefs.putString("token", deviceToken);
-      prefs.putString("boxId", BOX_ID);
+      prefs.putString("boxId", runtimeBoxId);
       prefs.end();
-      Serial.printf("[NET] Box %s enregistree sur Supervisor_App (token OK)\n", BOX_ID);
+      Serial.printf("[NET] Box %s enregistree sur Supervisor_App (token OK)\n", runtimeBoxId);
       backendConnected = true;
       return true;
     }
@@ -952,7 +962,37 @@ static bool registerBoxOnServer() {
   return false;
 }
 
+static void syncAssignedConfigFromServer(const String& resp) {
+  String srvZone = jsonExtractString(resp, "zone");
+  String srvGallery = jsonExtractString(resp, "gallery");
+  String srvName = jsonExtractString(resp, "name");
+  bool changed = false;
+
+  if (srvZone.length() > 0 && srvZone != String(runtimeBoxZone)) {
+    snprintf(runtimeBoxZone, sizeof(runtimeBoxZone), "%s", srvZone.c_str());
+    changed = true;
+  }
+  if (srvGallery.length() > 0 && srvGallery != String(runtimeBoxGallery)) {
+    snprintf(runtimeBoxGallery, sizeof(runtimeBoxGallery), "%s", srvGallery.c_str());
+    changed = true;
+  }
+  if (srvName.length() > 0 && srvName != String(runtimeBoxName)) {
+    snprintf(runtimeBoxName, sizeof(runtimeBoxName), "%s", srvName.c_str());
+    changed = true;
+  }
+  if (changed) {
+    prefs.begin("ulinzi", false);
+    prefs.putString("boxId", runtimeBoxId);
+    prefs.putString("zone", runtimeBoxZone);
+    prefs.putString("gallery", runtimeBoxGallery);
+    prefs.putString("name", runtimeBoxName);
+    prefs.end();
+    Serial.printf("[CFG] Affectation recue de Supervisor_App: %s | %s\n", runtimeBoxZone, runtimeBoxGallery);
+  }
+}
+
 static void applyServerCommands(const String& resp) {
+  syncAssignedConfigFromServer(resp);
   const uint64_t tStart = esp_timer_get_time();
 
   int posAct   = resp.lastIndexOf("\"ACTIVATE_SIREN\"");
@@ -1025,7 +1065,7 @@ static bool sendTelemetryToServer() {
         "\"gx\":%.2f,\"gy\":%.2f,\"gz\":%.2f"
       "}"
     "}",
-    BOX_ID, BOX_NAME, BOX_ZONE, BOX_GALLERY,
+    runtimeBoxId, runtimeBoxName, runtimeBoxZone, runtimeBoxGallery,
     staIpStr,
     (unsigned long)s.uptimeMs,
     s.relayActive ? "true" : "false",
@@ -1041,7 +1081,7 @@ static bool sendTelemetryToServer() {
     s.ax, s.ay, s.az, s.gx, s.gy, s.gz
   );
 
-  String url = String(API_BASE_URL) + "/api/devices/" + BOX_ID + "/telemetry";
+  String url = String(API_BASE_URL) + "/api/devices/" + runtimeBoxId + "/telemetry";
   String resp;
   int code = httpPostJson(url, String(body), deviceToken, nullptr, resp);
   if (code == 401) {
@@ -1059,7 +1099,7 @@ static bool sendTelemetryToServer() {
 }
 
 static bool pollCommandsFromServer() {
-  String url = String(API_BASE_URL) + "/api/devices/" + BOX_ID + "/commands?ack=1";
+  String url = String(API_BASE_URL) + "/api/devices/" + runtimeBoxId + "/commands?ack=1";
   String resp;
   int code = httpGetJson(url, deviceToken, resp);
   if (code == 401) {
@@ -1103,12 +1143,12 @@ static void flushPendingAlerts() {
         "\"siren\":%s,"
         "\"message\":\"%s\""
       "}",
-      item.clientEventId, BOX_ZONE, item.source, item.type, item.severity,
+      item.clientEventId, runtimeBoxZone, item.source, item.type, item.severity,
       item.sensorType, item.sensorRaw, item.threshold,
       item.siren ? "true" : "false", item.message
     );
 
-    String url = String(API_BASE_URL) + "/api/devices/" + BOX_ID + "/alerts";
+    String url = String(API_BASE_URL) + "/api/devices/" + runtimeBoxId + "/alerts";
     String resp;
     int code = httpPostJson(url, String(body), deviceToken, nullptr, resp);
     if (code >= 200 && code < 300) {
@@ -1192,17 +1232,33 @@ void setup() {
   bootNonce = (uint32_t)esp_random();
   netMtx = xSemaphoreCreateMutex();
 
-  // Charger le token mémorisé (ou token statique de config.h)
+  // Identité Plug & Play : AUTO -> ULINZI-XXXXXX depuis l'eFuse MAC de la puce
+  if (strcmp(BOX_ID, "AUTO") == 0 || strlen(BOX_ID) == 0) {
+    uint64_t mac = ESP.getEfuseMac();
+    snprintf(runtimeBoxId, sizeof(runtimeBoxId), "ULINZI-%06llX", (unsigned long long)(mac & 0xFFFFFFULL));
+  } else {
+    snprintf(runtimeBoxId, sizeof(runtimeBoxId), "%s", BOX_ID);
+  }
+
+  // Charger le token et l'affectation mémorisés depuis Supervisor_App
+  prefs.begin("ulinzi", true);
+  String savedId      = prefs.getString("boxId", "");
+  String savedTok     = prefs.getString("token", "");
+  String savedZone    = prefs.getString("zone", "");
+  String savedGallery = prefs.getString("gallery", "");
+  String savedName    = prefs.getString("name", "");
+  prefs.end();
+
+  if (savedId == String(runtimeBoxId)) {
+    if (savedZone.length() > 0) snprintf(runtimeBoxZone, sizeof(runtimeBoxZone), "%s", savedZone.c_str());
+    if (savedGallery.length() > 0) snprintf(runtimeBoxGallery, sizeof(runtimeBoxGallery), "%s", savedGallery.c_str());
+    if (savedName.length() > 0) snprintf(runtimeBoxName, sizeof(runtimeBoxName), "%s", savedName.c_str());
+  }
+
   if (strlen(STATIC_DEVICE_TOKEN) > 0) {
     snprintf(deviceToken, sizeof(deviceToken), "%s", STATIC_DEVICE_TOKEN);
-  } else {
-    prefs.begin("ulinzi", true);
-    String savedId = prefs.getString("boxId", "");
-    String savedTok = prefs.getString("token", "");
-    prefs.end();
-    if (savedId == String(BOX_ID) && savedTok.length() >= 16) {
-      snprintf(deviceToken, sizeof(deviceToken), "%s", savedTok.c_str());
-    }
+  } else if (savedId == String(runtimeBoxId) && savedTok.length() >= 16) {
+    snprintf(deviceToken, sizeof(deviceToken), "%s", savedTok.c_str());
   }
 
   pinMode(LED_BLUE, OUTPUT);
@@ -1225,7 +1281,7 @@ void setup() {
   lcdOK = (lcd.begin(16, 2) == 0);
   if (lcdOK) {
     lcd.backlight();
-    lcdLine(0, BOX_ID);
+    lcdLine(0, runtimeBoxId);
     lcdLine(1, "Demarrage...");
   } else {
     Serial.println("ERREUR : LCD non detecte");
@@ -1239,11 +1295,11 @@ void setup() {
 
   // Wi-Fi AP+STA : AP local pour diagnostic terrain + STA vers Supervisor_App
   WiFi.mode(ENABLE_LOCAL_AP ? WIFI_AP_STA : WIFI_STA);
-  WiFi.setSleep(false);
+  WiFi.setSleep(ENABLE_BLE_BEACON ? true : false);
   if (ENABLE_LOCAL_AP) {
-    if (WiFi.softAP(BOX_ID, AP_PASSWORD)) {
+    if (WiFi.softAP(runtimeBoxId, AP_PASSWORD)) {
       Serial.printf("Tableau de bord local (%s) : http://%s\n",
-                    BOX_ID, WiFi.softAPIP().toString().c_str());
+                    runtimeBoxId, WiFi.softAPIP().toString().c_str());
     } else {
       Serial.println("ERREUR : impossible de creer le Wi-Fi AP");
     }
@@ -1258,6 +1314,28 @@ void setup() {
   server.begin();
 
   logEvent("Demarrage Ulinzi Box");
+
+#if ENABLE_BLE_BEACON
+  BLEDevice::init(runtimeBoxId);
+  {
+    BLEAdvertising *adv = BLEDevice::getAdvertising();
+    BLEAdvertisementData advData;
+    advData.setFlags(0x06);
+    advData.setName(runtimeBoxId);
+    const char mfgRaw[6] = { (char)0xFF, (char)0xFF, 'U', 'L', 'Z', (char)((int8_t)BLE_TX_POWER_1M) };
+#if ESP_ARDUINO_VERSION_MAJOR >= 3
+    advData.setManufacturerData(String(mfgRaw, 6));
+#else
+    advData.setManufacturerData(std::string(mfgRaw, 6));
+#endif
+    adv->setAdvertisementData(advData);
+    adv->setScanResponse(false);
+    adv->setMinInterval(0x00A0);
+    adv->setMaxInterval(0x0140);
+    BLEDevice::startAdvertising();
+    Serial.printf("[BLE] Balise active: %s (TxPower=%d dBm)\n", runtimeBoxId, BLE_TX_POWER_1M);
+  }
+#endif
 
   // Tâche réseau dédiée sur Core 0 (n'impacte jamais le Watchdog ni MPU6050)
   xTaskCreatePinnedToCore(networkTask, "NetTask", 10240, nullptr, 1, nullptr, 0);
@@ -1296,7 +1374,7 @@ void loop() {
   if (now - lastSerialMs >= 2000) {
     lastSerialMs = now;
     Serial.printf("[%s | %s] Gaz=%d base=%d phase=%d | Vib=%.2f mpu=%d | danger=%d remoteSiren=%d api=%d\n",
-                  BOX_ID, BOX_ZONE,
+                  runtimeBoxId, runtimeBoxZone,
                   gasRaw, (int)gasBaseline, gasPhase, vibRms, mpuOK,
                   dangerNow, remoteSirenOn, backendConnected);
   }

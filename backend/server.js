@@ -26,6 +26,7 @@ import visionRoutes from './routes/vision.js';
 import crisisRoutes, { setCrisisReferences } from './routes/crisis.js';
 import directorRoutes from './routes/director.js';
 import deviceRoutes, { setDeviceReferences } from './routes/devices.js';
+import mineMapRoutes from './routes/mineMap.js';
 
 dotenv.config({ path: '.env' });
 
@@ -71,8 +72,8 @@ const io = new SocketIOServer(httpServer, {
 
 // Middleware
 app.use(cors());
-app.use(express.json({ limit: '1mb' }));
-app.use(express.urlencoded({ extended: true, limit: '1mb' }));
+app.use(express.json({ limit: '5mb' }));
+app.use(express.urlencoded({ extended: true, limit: '5mb' }));
 
 // Rate limiting simple (sans dépendance externe)
 const loginAttempts = new Map();
@@ -124,6 +125,7 @@ app.use('/api/lora', loraRoutes);
 app.use('/api/data', dataRoutes);
 app.use('/api/watch', watchRoutes);
 app.use('/api/gis', gisRoutes);
+app.use('/api/mine-map', mineMapRoutes);
 app.use('/api/fleet', fleetRoutes);
 app.use('/api/maintenance', maintenanceRoutes);
 app.use('/api/esg', esgRoutes);

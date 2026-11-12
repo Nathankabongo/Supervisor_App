@@ -265,18 +265,23 @@ export class RealTimeDataService {
   updateMinerLocation(data) {
     const existing = this.miners.get(data.minerId) || {};
     
+    const isIndoor = data.positionSource === 'ble_ips' || data.positionSource === 'pdr';
+
     // Extraction GPS réelle (priorité aux coordonnées de la montre)
-    const rawLat = data.lat !== undefined ? data.lat : (data.latitude !== undefined ? data.latitude : existing.latitude);
-    const rawLng = data.lng !== undefined ? data.lng : (data.longitude !== undefined ? data.longitude : existing.longitude);
-    const hasGps = rawLat !== null && rawLng !== null && !isNaN(Number(rawLat)) && !isNaN(Number(rawLng)) && (Number(rawLat) !== 0 || Number(rawLng) !== 0);
-    const lat = hasGps ? Number(rawLat) : (existing.latitude ?? null);
-    const lng = hasGps ? Number(rawLng) : (existing.longitude ?? null);
+    const rawLat = data.lat !== undefined ? data.lat : data.latitude;
+    const rawLng = data.lng !== undefined ? data.lng : data.longitude;
+    const hasIncomingGps = !isIndoor && rawLat !== undefined && rawLat !== null && rawLng !== undefined && rawLng !== null && !isNaN(Number(rawLat)) && !isNaN(Number(rawLng)) && (Number(rawLat) !== 0 || Number(rawLng) !== 0);
+    const lat = hasIncomingGps ? Number(rawLat) : (existing.latitude ?? null);
+    const lng = hasIncomingGps ? Number(rawLng) : (existing.longitude ?? null);
 
     let x = data.x ?? existing.position?.x ?? 500;
     let y = data.y ?? existing.position?.y ?? 250;
     let zone = data.zone || existing.zone || 'ZONE B';
+    const levelId = isIndoor ? (data.levelId ?? existing.levelId ?? null) : (hasIncomingGps ? null : (data.levelId ?? existing.levelId ?? null));
+    const positionSource = data.positionSource || (hasIncomingGps ? 'gps' : (existing.positionSource || 'gps'));
+    const gallery = data.gallery !== undefined ? data.gallery : existing.gallery;
 
-    if (hasGps) {
+    if (hasIncomingGps) {
       const mapData = gpsToLocalMap(lat, lng);
       x = mapData.x;
       y = mapData.y;
@@ -302,6 +307,10 @@ export class RealTimeDataService {
       position: newPos,
       trajectory: updatedTrajectory,
       zone: zone,
+      gallery: gallery,
+      levelId: levelId,
+      positionSource: positionSource,
+      uncertaintyM: data.uncertaintyM ?? existing.uncertaintyM ?? null,
       latitude: lat,
       longitude: lng,
       battery: data.battery !== undefined ? data.battery : existing.battery,
@@ -332,6 +341,10 @@ export class RealTimeDataService {
       name: minerData.name,
       position: minerData.position,
       zone: minerData.zone,
+      gallery: minerData.gallery,
+      levelId: minerData.levelId,
+      positionSource: minerData.positionSource,
+      uncertaintyM: minerData.uncertaintyM,
       latitude: minerData.latitude,
       longitude: minerData.longitude,
       lat: minerData.latitude,

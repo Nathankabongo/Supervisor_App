@@ -10,6 +10,7 @@ import MinersList from '../map/MinersList';
 import { ZoomIn, ZoomOut, Home, Eye, EyeOff, Sun, Search, MapPin } from 'lucide-react';
 import Interactive3DMap from '../map/Interactive3DMap';
 import SatelliteMap from '../map/SatelliteMap';
+import UndergroundMap from '../map/UndergroundMap';
 
 const SITE_ZONES = [
   { id: 'ZONE A', short: 'A', label: 'Extraction', color: '#f97316' },
@@ -37,7 +38,17 @@ export default function MapPanel() {
   const [showGateways, setShowGateways] = useState(true);
   const [showAlerts, setShowAlerts] = useState(true);
   const [viewBy, setViewBy] = useState<'zone' | 'gallery' | 'level'>('zone');
-  const [mapMode, setMapMode] = useState<'satellite' | 'industrial' | 'isometric' | 'timeline'>('satellite');
+  const [mapMode, setMapMode] = useState<'satellite' | 'underground' | 'industrial' | 'isometric' | 'timeline'>('satellite');
+
+  // Bascule automatique Surface (GPS) ↔ Souterrain (BLE IPS / PDR) selon le mineur sélectionné
+  useEffect(() => {
+    if (!selectedMiner) return;
+    if (selectedMiner.positionSource === 'ble_ips' || selectedMiner.positionSource === 'pdr') {
+      setMapMode('underground');
+    } else if (selectedMiner.positionSource === 'gps' && mapMode === 'underground') {
+      setMapMode('satellite');
+    }
+  }, [selectedMiner?.id, selectedMiner?.positionSource]);
   const [selectedSite, setSelectedSite] = useState<
     'all' | 'open_pit' | 'underground' | 'galleries'
   >('all');
@@ -321,7 +332,11 @@ export default function MapPanel() {
                       </div>
                     ) : mapMode === 'satellite' ? (
                       <span className="text-sm font-semibold text-emerald-400">
-                        Vue Satellite (Kolwezi, RDC)
+                        Vue Satellite (Surface GPS)
+                      </span>
+                    ) : mapMode === 'underground' ? (
+                      <span className="text-sm font-semibold text-purple-400">
+                        Vue Souterraine (Galeries &amp; Balises Ulinzi Box)
                       </span>
                     ) : mapMode === 'isometric' ? (
                       <span className="text-sm font-semibold text-cyan-400">
@@ -351,6 +366,15 @@ export default function MapPanel() {
                       }`}
                     >
                       Satellite
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMapMode('underground')}
+                      className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-colors ${
+                        mapMode === 'underground' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'
+                      }`}
+                    >
+                      Souterrain (IPS)
                     </button>
                     <button
                       type="button"
@@ -388,6 +412,17 @@ export default function MapPanel() {
                     selectedMiner={selectedMiner}
                     onMinerClick={handleMinerClick}
                   />
+                )}
+
+                {mapMode === 'underground' && (
+                  <div className="h-[580px] rounded-xl overflow-hidden border border-slate-800">
+                    <UndergroundMap
+                      miners={filteredMiners}
+                      selectedMiner={selectedMiner}
+                      onSelectMiner={handleMinerClick}
+                      zoom={zoom}
+                    />
+                  </div>
                 )}
 
                 {mapMode === 'isometric' && (

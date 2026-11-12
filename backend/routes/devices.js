@@ -84,6 +84,31 @@ router.post('/', authUser, requireAdmin, (req, res) => {
   res.status(201).json({ device: result.device, deviceToken: result.deviceToken });
 });
 
+router.patch('/:deviceId', authUser, (req, res) => {
+  const { zone, gallery, name } = req.body || {};
+  const device = getDevice(req.params.deviceId);
+  if (!device) return res.status(404).json({ error: 'Appareil introuvable' });
+
+  const db = getDb();
+  db.prepare(`
+    UPDATE devices
+    SET zone = COALESCE(NULLIF(?, ''), zone),
+        gallery = COALESCE(?, gallery),
+        name = COALESCE(?, name)
+    WHERE id = ?
+  `).run(
+    zone !== undefined ? String(zone).trim() : null,
+    gallery !== undefined ? String(gallery).trim() : null,
+    name !== undefined ? String(name).trim() : null,
+    device.id,
+  );
+  const fresh = getDevice(device.id);
+  if (websocketManager && fresh) {
+    websocketManager.broadcast('device-status', publicStatus(fresh));
+  }
+  res.json({ ok: true, device: publicStatus(fresh) });
+});
+
 router.get('/', authUser, (req, res) => {
   res.json({ devices: listDevices() });
 });
@@ -152,6 +177,9 @@ router.get('/:deviceId/commands', authDevice, (req, res) => {
   const sync = getSirenSyncState(req.device);
   res.json({
     ok: true,
+    zone: req.device.zone,
+    gallery: req.device.gallery || '',
+    name: req.device.name || '',
     commands,
     desiredSiren: sync.desiredSiren,
     siren: sync.desiredSiren,
@@ -222,6 +250,9 @@ router.post('/:deviceId/telemetry', authDevice, (req, res) => {
     ok: true,
     status: statusPayload.status,
     lastSeen: statusPayload.lastSeen,
+    zone: fresh?.zone || device.zone,
+    gallery: fresh?.gallery || device.gallery || '',
+    name: fresh?.name || device.name || '',
     pendingCommands,
     desiredSiren: sync.desiredSiren,
     siren: sync.desiredSiren,

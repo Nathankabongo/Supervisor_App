@@ -2,6 +2,7 @@ import express from 'express';
 import { getDb } from '../services/database.js';
 import { io } from '../server.js';
 import { gpsToLocalMap } from '../utils/gps.js';
+import { computeIndoorPosition } from '../services/indoorPositioningService.js';
 
 const router = express.Router();
 
@@ -50,15 +51,44 @@ router.post('/data', (req, res) => {
             // Extraction robuste des coordonnées GPS réelles transmises par la montre
             const rawLat = data.lat !== undefined ? data.lat : (data.latitude !== undefined ? data.latitude : null);
             const rawLng = data.lng !== undefined ? data.lng : (data.lon !== undefined ? data.lon : (data.longitude !== undefined ? data.longitude : null));
-            const hasGps = rawLat !== null && rawLng !== null && !isNaN(Number(rawLat)) && !isNaN(Number(rawLng)) && (Number(rawLat) !== 0 || Number(rawLng) !== 0);
+            const gpsValidFlag = data.gpsValid !== undefined ? Boolean(data.gpsValid) : true;
+            const hasGps = gpsValidFlag && rawLat !== null && rawLng !== null && !isNaN(Number(rawLat)) && !isNaN(Number(rawLng)) && (Number(rawLat) !== 0 || Number(rawLng) !== 0);
             const lat = hasGps ? Number(rawLat) : (miner.latitude ?? null);
             const lng = hasGps ? Number(rawLng) : (miner.longitude ?? null);
 
-            // Calcul du mapping local SVG (1000x500) et détection de la zone
-            const mapData = gpsToLocalMap(lat, lng);
-            const zone = hasGps ? mapData.zone : (miner.zone || mapData.zone || 'ZONE B');
-            const x = hasGps ? mapData.x : (miner.x ?? mapData.x ?? 500);
-            const y = hasGps ? mapData.y : (miner.y ?? mapData.y ?? 250);
+            // Bascule automatique Surface (GPS) ↔ Souterrain (BLE Ulinzi Box + PDR + Map Matching)
+            let zone = miner.zone || 'ZONE B';
+            let x = miner.x ?? 500;
+            let y = miner.y ?? 250;
+            let levelId = hasGps ? null : (miner.level_id || null);
+            let gallery = miner.gallery || null;
+            let positionSource = hasGps ? 'gps' : (miner.position_source || 'gps');
+            let uncertaintyM = null;
+
+            if (hasGps) {
+                const mapData = gpsToLocalMap(lat, lng);
+                zone = mapData.zone;
+                x = mapData.x;
+                y = mapData.y;
+                positionSource = 'gps';
+                levelId = null;
+            } else {
+                const indoor = computeIndoorPosition({
+                    db,
+                    miner,
+                    beacons: Array.isArray(data.beacons) ? data.beacons : [],
+                    steps: data.steps,
+                });
+                if (indoor) {
+                    x = indoor.x;
+                    y = indoor.y;
+                    levelId = indoor.levelId;
+                    gallery = indoor.gallery || gallery;
+                    zone = indoor.zone || zone;
+                    positionSource = indoor.source;
+                    uncertaintyM = indoor.uncertaintyM;
+                }
+            }
 
             // Log de changement de zone si applicable
             const oldZone = miner.zone;
@@ -124,10 +154,13 @@ router.post('/data', (req, res) => {
                 }
             }
 
-            // Mise à jour complète de la table miners avec les coordonnées GPS réelles et l'état de mouvement
+            // Mise à jour complète de la table miners avec coordonnées GPS ou IPS souterrain
             db.prepare(`
                 UPDATE miners SET 
                     zone = ?, 
+                    gallery = ?,
+                    level_id = ?,
+                    position_source = ?,
                     battery = ?, 
                     x = ?, 
                     y = ?, 
@@ -140,6 +173,9 @@ router.post('/data', (req, res) => {
                 WHERE id = ?
             `).run(
                 zone, 
+                gallery,
+                levelId,
+                positionSource,
                 data.battery ?? 100, 
                 x, 
                 y, 
@@ -157,10 +193,14 @@ router.post('/data', (req, res) => {
                 minerId: miner.id,
                 x: x,
                 y: y,
-                lat: lat,
-                lng: lng,
-                latitude: lat,
-                longitude: lng,
+                lat: hasGps ? lat : null,
+                lng: hasGps ? lng : null,
+                latitude: hasGps ? lat : null,
+                longitude: hasGps ? lng : null,
+                levelId: levelId,
+                gallery: gallery,
+                positionSource: positionSource,
+                uncertaintyM: uncertaintyM,
                 battery: data.battery ?? 100,
                 connectionType: 'wifi',
                 zone: zone,
@@ -184,7 +224,10 @@ router.post('/data', (req, res) => {
                 ok: true,
                 workerName: miner.name,
                 zone: zone,
+                levelId: levelId,
+                positionSource: positionSource,
                 gps: hasGps ? { lat, lng } : null,
+                indoor: (positionSource === 'ble_ips' || positionSource === 'pdr') ? { x, y, levelId, uncertaintyM } : null,
                 motion: motion
             });
         } else {

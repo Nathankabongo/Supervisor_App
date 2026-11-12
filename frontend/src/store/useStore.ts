@@ -32,6 +32,9 @@ export interface Miner {
   watchId?: string;
   isInService?: boolean;
   isUnderground?: boolean;
+  levelId?: string | null;
+  positionSource?: string;
+  uncertaintyM?: number | null;
   phone?: string;
   emergencyContact?: string;
   bloodGroup?: string;

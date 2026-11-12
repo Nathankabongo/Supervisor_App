@@ -1,5 +1,64 @@
 import { API_URL } from '../config/urls';
 
+export interface MineLevel {
+  id: string;
+  name: string;
+  depth_m: number;
+  width_m: number;
+  height_m: number;
+  background_image?: string | null;
+  background_opacity?: number;
+  sort_order?: number;
+}
+
+export interface MineNode {
+  id: string;
+  level_id: string;
+  x: number;
+  y: number;
+  type: 'junction' | 'shaft' | 'exit' | 'refuge';
+  label?: string | null;
+  zone?: string | null;
+}
+
+export interface MineSegment {
+  id: string;
+  level_id: string;
+  from_node_id: string;
+  to_node_id: string;
+  name?: string | null;
+  width_m: number;
+  status: 'open' | 'restricted' | 'blocked';
+}
+
+export interface MineAnchor {
+  id: string;
+  device_id: string;
+  level_id: string;
+  segment_id?: string | null;
+  x: number;
+  y: number;
+  tx_power: number;
+  path_loss_n: number;
+}
+
+export interface MineMapDevice {
+  id: string;
+  name?: string | null;
+  zone: string;
+  gallery?: string | null;
+  status?: string;
+  device_type?: string;
+}
+
+export interface MineMapData {
+  levels: MineLevel[];
+  nodes: MineNode[];
+  segments: MineSegment[];
+  anchors: MineAnchor[];
+  devices: MineMapDevice[];
+}
+
 interface LoginResponse {
   token: string;
   user: {
@@ -438,6 +497,18 @@ class ApiService {
     return this.request('/gis', {
       method: 'POST',
       body: JSON.stringify(config),
+    });
+  }
+
+  // === Underground Mine Map (IPS Topology) ===
+  async getMineMap(): Promise<MineMapData> {
+    return this.request('/mine-map');
+  }
+
+  async saveMineMap(payload: Pick<MineMapData, 'levels' | 'nodes' | 'segments' | 'anchors'>): Promise<MineMapData & { success: boolean; message: string }> {
+    return this.request('/mine-map', {
+      method: 'PUT',
+      body: JSON.stringify(payload),
     });
   }
 
